@@ -3,9 +3,8 @@
   "version": "1.0.0",
   "description": "Bot Mi Semilla con integración Telegram + Supabase (modo webhook + polling).",
   "main": "index.js",
-  "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.cjs"
   },
   "engines": {
     "node": ">=18.x"
