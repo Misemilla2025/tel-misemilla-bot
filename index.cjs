@@ -1,7 +1,8 @@
 // ================== SERVIDOR UNIVERSAL (Render + Local) ==================
-import express from "express";
-import TelegramBot from "node-telegram-bot-api";
-import { createClient } from "@supabase/supabase-js";
+const express = require("express");
+const TelegramBot = require("node-telegram-bot-api");
+const { createClient } = require("@supabase/supabase-js");
+const fs = require("fs");
 
 // Variables desde Render (.env)
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8244545665:AAG7zy9RZenl-fOVgXxpQ1vRe2LKgMZPPMo";
@@ -60,29 +61,21 @@ if (process.env.RENDER_EXTERNAL_URL) {
 // =============== [0] Auto-limpieza y dependencias (opcional) ===============
 console.clear();
 console.log("🧹 Limpiando archivos de estado…");
-const fs = require("fs");
 ["misdatos_tg.json", "pendiente_tg.json", "restaurar_tg.json"].forEach(f => {
   try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch {}
 });
 console.log("✅ Estado limpio.");
 
-// =============== [1] Librerías principales ===============
-const Telegram = require("node-telegram-bot-api");
-const { createClient: createSupabase } = require("@supabase/supabase-js");
-
-// =============== [2] Configuración local (para Termux) ===============
-const LOCAL_TOKEN = "8244545665:AAG7zy9RZenl-fOVgXxpQ1vRe2LKgMZPPMo";
-const LOCAL_URL   = "https://hybozykbfehfjldhaxpp.supabase.co";
-const LOCAL_KEY   = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5Ym96eWtiZmVoZmpsZGhheHBwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzMjU0OTMsImV4cCI6MjA3NDkwMTQ5M30.Bj1Jl3-g0gyp1UwsiK-cwjS8Cm2z7Il4_jZ-tCQhbwM";
-const LOCAL_TABLE = "registros_miembros";
-
-// =============== [3] Inicialización universal del cliente ===============
-const db = createSupabase(SUPABASE_URL || LOCAL_URL, SUPABASE_KEY || LOCAL_KEY);
+// =============== [1] Inicialización universal del cliente ===============
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Monitoreo de errores de Telegram
 bot.on("polling_error", (err) => console.error("⚠️ polling_error:", err.message));
+
 console.log("🤖 Iniciando bot de Mi Semilla…");
 console.log("⏳ Conectando con Telegram…");
+
+// Aquí continúa toda tu lógica de comandos, mensajes y funciones personalizadas.
 
 // =============== [4] Utilidades y constantes ===============
 
