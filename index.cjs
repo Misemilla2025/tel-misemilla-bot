@@ -280,7 +280,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
           return;
         }
 
-        // Buscar por número de celular
+        // Buscar por número de celular en la misma tabla
         const { data: coincidencia, error: errCel } = await supabase
           .from(TABLE)
           .select("*")
@@ -288,38 +288,32 @@ bot.onText(/^\/misdatos$/, async (msg) => {
 
         if (errCel) throw errCel;
 
-        // 3️⃣ Si el número no existe
+        // 3️⃣ Si no hay coincidencia en esta tabla
         if (!coincidencia || coincidencia.length === 0) {
           await bot.sendMessage(
             chatId,
-            "⚠️ No encontré tu registro asociado a ese celular. Usa /restaurar para vincular tu cuenta."
+            "⚠️ No encontré tu registro asociado a ese celular dentro de esta base. Usa /restaurar para vincular tu cuenta."
           );
           return;
         }
 
         const registro = coincidencia[0];
 
-        // 4️⃣ Si el número está vinculado a otro usuario de Telegram
-        if (
-          registro.usuario_telegram &&
-          registro.usuario_telegram !== username
-        ) {
+        // 4️⃣ Si el número está vinculado a otro Telegram diferente
+        if (registro.usuario_telegram && registro.usuario_telegram !== username) {
           await bot.sendMessage(
             chatId,
-            "🚫 Este número ya está registrado con otro usuario de Telegram. No se puede consultar desde aquí."
+            "🚫 Este número ya está vinculado a otro usuario de Telegram. No se puede consultar desde aquí."
           );
           return;
         }
 
-        // 5️⃣ Si el número es correcto pero no tiene Telegram vinculado → mostrar datos
-        if (!registro.usuario_telegram) {
-          await bot.sendMessage(
-            chatId,
-            "✅ Número verificado correctamente. Mostrando la información registrada..."
-          );
-          enviarFichaDatos(chatId, registro, true);
-          return;
-        }
+        // 5️⃣ Si el número coincide en esta tabla, aunque no tenga Telegram → mostrar datos
+        await bot.sendMessage(
+          chatId,
+          "✅ Número verificado correctamente. Mostrando la información registrada..."
+        );
+        enviarFichaDatos(chatId, registro, !registro.usuario_telegram);
       });
 
       return;
