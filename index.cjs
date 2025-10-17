@@ -373,6 +373,66 @@ function formateaFichaBonita(r) {
   return texto;
 }
 
+// ======================= COMANDO /ACTUALIZACION =======================
+bot.onText(/^\/actualizacion (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const usuario = msg.from.username ? msg.from.username.toLowerCase() : msg.from.id.toString();
+  const entrada = match[1].trim();
+
+  // Detectar formato "campo valor"
+  const [campo, ...valorArray] = entrada.split(" ");
+  const valor = valorArray.join(" ").trim();
+
+  if (!campo || !valor) {
+    await bot.sendMessage(chatId, "⚠️ Usa el formato correcto:\n`/actualizacion campo valor`\n\nEjemplo: `/actualizacion ciudad Bogotá`", {
+      parse_mode: "Markdown",
+    });
+    return;
+  }
+
+  await bot.sendMessage(chatId, `✏️ Actualizando *${campo}* a *${valor}*...`, { parse_mode: "Markdown" });
+
+  try {
+    // Verificar existencia del usuario
+    const { data: registro, error: errBuscar } = await supabase
+      .from(TABLE)
+      .select("*")
+      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`);
+
+    if (errBuscar) throw errBuscar;
+    if (!registro || registro.length === 0) {
+      await bot.sendMessage(chatId, "⚠️ No se encontró tu registro. Usa /restaurar para vincular tu cuenta.");
+      return;
+    }
+
+    const id = registro[0].id;
+
+    // Validar duplicados solo para campos clave
+    const camposDuplicados = ["email", "documento", "celular", "usuario_telegram"];
+    if (camposDuplicados.includes(campo)) {
+      const { data: existe } = await supabase
+        .from(TABLE)
+        .select("id")
+        .or(`email.eq.${valor},documento.eq.${valor},celular.eq.${valor},usuario_telegram.eq.${valor}`);
+
+      if (existe && existe.length > 0 && existe[0].id !== id) {
+        await bot.sendMessage(chatId, "🚫 Ese valor ya está asociado a otro registro. No se puede actualizar.");
+        return;
+      }
+    }
+
+    // Ejecutar la actualización
+    const { error: errUpdate } = await supabase.from(TABLE).update({ [campo]: valor }).eq("id", id);
+
+    if (errUpdate) throw errUpdate;
+
+    await bot.sendMessage(chatId, `✅ *${campo}* actualizado correctamente a *${valor}*.`, { parse_mode: "Markdown" });
+  } catch (err) {
+    console.error("❌ Error en /actualizacion:", err);
+    await bot.sendMessage(chatId, "⚠️ Error al procesar la actualización. Intenta más tarde.");
+  }
+});
+
 // =============== [8] /restaurar (documento/email → elegir qué vincular → confirmar) ===============
 bot.onText(/^\/restaurar\b/i, async (msg) => {
   const c = msg.chat.id;
