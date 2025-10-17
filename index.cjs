@@ -416,32 +416,13 @@ bot.onText(/^\/actualizacion(?:\s+(.+))?/, async (msg, match) => {
   );
 
   try {
-    // Buscar usuario en la tabla (manejo seguro para evitar fallo en .or)
-    let registros = [];
-    let errBuscar = null;
-
-    // Intentar búsqueda por usuario_telegram
-    let consulta = await supabase.from(TABLE).select("*").eq("usuario_telegram", usuario);
-    if (consulta.error) errBuscar = consulta.error;
-    else if (consulta.data && consulta.data.length > 0) registros = consulta.data;
-
-    // Si no se encontró, buscar por celular
-    if (registros.length === 0) {
-      consulta = await supabase.from(TABLE).select("*").eq("celular", usuario);
-      if (consulta.data && consulta.data.length > 0) registros = consulta.data;
-    }
-
-    // Si no se encontró, buscar por email
-    if (registros.length === 0) {
-      consulta = await supabase.from(TABLE).select("*").eq("email", usuario);
-      if (consulta.data && consulta.data.length > 0) registros = consulta.data;
-    }
-
-    // Si no se encontró, buscar por documento
-    if (registros.length === 0) {
-      consulta = await supabase.from(TABLE).select("*").eq("documento", usuario);
-      if (consulta.data && consulta.data.length > 0) registros = consulta.data;
-    }
+    // Buscar usuario en la tabla
+    const { data: registros, error: errBuscar } = await supabase
+      .from(TABLE)
+      .select("*")
+      .or(
+        `usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`
+      );
 
     if (errBuscar) throw errBuscar;
 
