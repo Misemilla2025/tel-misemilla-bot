@@ -303,7 +303,6 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const texto = match[1]?.trim();
 
-  // Si no se escribe campo ni valor, muestra la guía
   if (!texto) {
     await bot.sendMessage(
       chatId,
@@ -320,13 +319,11 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
   const campo = partes.shift()?.trim();
   const valor = partes.join(" ").trim();
 
-  // 🔹 CORRECCIÓN: siempre antepone '@' si el usuario tiene nombre de Telegram
   const usuario = msg.from.username
     ? '@' + msg.from.username.toLowerCase()
     : msg.from.id.toString();
 
   try {
-    // Buscar su registro por Telegram, celular, email o documento
     const { data: registros, error: errBuscar } = await supabase
       .from(TABLE)
       .select("*")
@@ -334,13 +331,11 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
 
     if (errBuscar) throw errBuscar;
 
-    // Validar si no hay registro
     if (!registros || registros.length === 0) {
       await bot.sendMessage(chatId, "⚠️ No encontré tu registro asociado a este Telegram. Usa /restaurar.");
       return;
     }
 
-    // Validar si hay duplicados
     if (registros.length > 1) {
       await bot.sendMessage(chatId, "⚠️ Se encontraron duplicados. Contacta al administrador para resolverlo.");
       return;
@@ -349,7 +344,13 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
     const id = registros[0].id;
     const camposProtegidos = ["email", "documento", "celular", "usuario_telegram"];
 
-    // Evitar duplicación de campos críticos
+    // ✅ Verificar si el nuevo valor es igual al actual
+    if (registros[0][campo] && registros[0][campo].toString().toLowerCase() === valor.toLowerCase()) {
+      await bot.sendMessage(chatId, `⚠️ No se realizaron cambios. El valor ingresado ya está registrado en ${campo}.`);
+      return;
+    }
+
+    // 🚫 Evitar duplicación de campos críticos
     if (camposProtegidos.includes(campo)) {
       const { data: existe, error: errDup } = await supabase
         .from(TABLE)
@@ -363,17 +364,21 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
       }
     }
 
-    // Actualizar el valor del campo
+    // 🧩 Convertir a mayúsculas excepto email y usuario_telegram
+    const camposMinuscula = ["email", "usuario_telegram"];
+    const valorFinal = camposMinuscula.includes(campo) ? valor : valor.toUpperCase();
+
+    // ✅ Actualizar el valor del campo
     const { error: errUpdate } = await supabase
       .from(TABLE)
-      .update({ [campo]: valor })
+      .update({ [campo]: valorFinal })
       .eq("id", id);
 
     if (errUpdate) throw errUpdate;
 
     await bot.sendMessage(
       chatId,
-      `✅ *${campo}* actualizado correctamente a *${valor}*.`,
+      `✅ *${campo}* actualizado correctamente a *${valorFinal}*.`,
       { parse_mode: "Markdown" }
     );
 
