@@ -258,7 +258,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // 1️⃣ Buscar primero por usuario de Telegram
+    // 1️⃣ Buscar por usuario de Telegram
     let { data: registros, error } = await supabase
       .from(TABLE)
       .select("*")
@@ -266,78 +266,93 @@ bot.onText(/^\/misdatos$/, async (msg) => {
 
     if (error) throw error;
 
-    // 2️⃣ Si no encuentra por Telegram, buscar por celular
-    if (!registros || registros.length === 0) {
-      const { data: porCelular, error: errCel } = await supabase
-        .from(TABLE)
-        .select("*")
-        .eq("celular", usuarioTelegram);
-
-      if (errCel) throw errCel;
-      registros = porCelular;
-    }
-
+    // 2️⃣ Si no encuentra, pedir celular
     if (!registros || registros.length === 0) {
       await bot.sendMessage(
         chatId,
-        "⚠️ No encontré tu registro asociado a este Telegram. Usa /restaurar para vincular tu cuenta."
+        "📱 No encontré tu usuario en Telegram. Por favor, escribe tu número de celular para verificar tu registro."
       );
-      return;
+
+      // Esperar respuesta del usuario
+      bot.once("message", async (resMsg) => {
+        const celularIngresado = resMsg.text.trim();
+
+        if (!/^\d{7,15}$/.test(celularIngresado)) {
+          await bot.sendMessage(chatId, "⚠️ El número no es válido. Intenta con un formato correcto, sin espacios ni símbolos.");
+          return;
+        }
+
+        const { data: porCelular, error: errCel } = await supabase
+          .from(TABLE)
+          .select("*")
+          .eq("celular", celularIngresado);
+
+        if (errCel) throw errCel;
+
+        if (!porCelular || porCelular.length === 0) {
+          await bot.sendMessage(
+            chatId,
+            "⚠️ No encontré tu registro asociado a ese celular. Usa /restaurar para vincular tu cuenta."
+          );
+          return;
+        }
+
+        const r = porCelular[0];
+        enviarFichaDatos(chatId, r);
+      });
+
+      return; // Detiene aquí para esperar respuesta
     }
 
-    if (registros.length > 1) {
-      await bot.sendMessage(
-        chatId,
-        "⚠️ Se encontraron varios registros asociados. Contacta al administrador para resolver duplicados."
-      );
-      return;
-    }
-
-    // 🧩 Ficha de datos del glosario
+    // 3️⃣ Si encontró por usuario_telegram
     const r = registros[0];
-    let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
+    enviarFichaDatos(chatId, r);
 
-    texto += "👤 *DATOS PERSONALES*\n";
-    texto += `• *Nombre:* ${r.nombre_completo?.toUpperCase() || "—"}\n`;
-    texto += `• *Documento:* ${r.documento?.toUpperCase() || "—"}\n`;
-    texto += `• *Género:* ${r.genero?.toUpperCase() || "—"}\n`;
-    texto += `• *Fecha de nacimiento:* ${r.fecha_nacimiento || "—"}\n\n`;
-
-    texto += "📞 *CONTACTO*\n";
-    texto += `• *Celular:* ${r.celular || "—"}\n`;
-    texto += `• *Email:* ${r.email || "—"}\n`;
-    texto += `• *Usuario Telegram:* ${r.usuario_telegram || "—"}\n\n`;
-
-    texto += "🏠 *UBICACIÓN*\n";
-    texto += `• *Ciudad:* ${r.ciudad?.toUpperCase() || "—"}\n`;
-    texto += `• *Dirección:* ${r.direccion?.toUpperCase() || "—"}\n\n`;
-
-    texto += "👨‍👩‍👧‍👦 *HOGAR*\n";
-    texto += `• *Número de integrantes:* ${r.num_integrantes || "—"}\n`;
-    texto += `• *Niños:* ${r.ninos || "—"}\n`;
-    texto += `• *Adultos mayores:* ${r.adultos_mayores || "—"}\n\n`;
-
-    texto += "💡 *SERVICIOS Y APOYOS*\n";
-    texto += `• *Recibe ayudas:* ${r.recibe_ayudas?.toUpperCase() || "—"}\n`;
-    texto += `• *Servicio de salud:* ${r.servicio_salud?.toUpperCase() || "—"}\n\n`;
-
-    texto += "💼 *OCUPACIÓN / EMPRENDIMIENTO*\n";
-    texto += `• *Ocupación actual:* ${r.ocupacion?.toUpperCase() || "—"}\n`;
-    texto += `• *Emprendimiento:* ${r.emprendimiento?.toUpperCase() || "—"}\n\n`;
-
-    texto += "🌱 *INTERESES / PARTICIPACIÓN*\n";
-    texto += `• *Hobbies:* ${r.hobbies?.toUpperCase() || "—"}\n`;
-    texto += `• *Participa en comunidad:* ${r.participacion_comunidad?.toUpperCase() || "—"}\n`;
-
-    await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
-    await bot.sendMessage(
-      chatId,
-      "❌ Error al consultar tus datos. Intenta más tarde."
-    );
+    await bot.sendMessage(chatId, "❌ Error al consultar tus datos. Intenta más tarde.");
   }
 });
+
+
+// ======================= FUNCIÓN REUTILIZABLE =======================
+async function enviarFichaDatos(chatId, r) {
+  let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
+
+  texto += "👤 *DATOS PERSONALES*\n";
+  texto += `• *Nombre:* ${r.nombre_completo?.toUpperCase() || "—"}\n`;
+  texto += `• *Documento:* ${r.documento?.toUpperCase() || "—"}\n`;
+  texto += `• *Género:* ${r.genero?.toUpperCase() || "—"}\n`;
+  texto += `• *Fecha de nacimiento:* ${r.fecha_nacimiento || "—"}\n\n`;
+
+  texto += "📞 *CONTACTO*\n";
+  texto += `• *Celular:* ${r.celular || "—"}\n`;
+  texto += `• *Email:* ${r.email || "—"}\n`;
+  texto += `• *Usuario Telegram:* ${r.usuario_telegram || "—"}\n\n`;
+
+  texto += "🏠 *UBICACIÓN*\n";
+  texto += `• *Ciudad:* ${r.ciudad?.toUpperCase() || "—"}\n`;
+  texto += `• *Dirección:* ${r.direccion?.toUpperCase() || "—"}\n\n`;
+
+  texto += "👨‍👩‍👧‍👦 *HOGAR*\n";
+  texto += `• *Número de integrantes:* ${r.num_integrantes || "—"}\n`;
+  texto += `• *Niños:* ${r.ninos || "—"}\n`;
+  texto += `• *Adultos mayores:* ${r.adultos_mayores || "—"}\n\n`;
+
+  texto += "💡 *SERVICIOS Y APOYOS*\n";
+  texto += `• *Recibe ayudas:* ${r.recibe_ayudas?.toUpperCase() || "—"}\n`;
+  texto += `• *Servicio de salud:* ${r.servicio_salud?.toUpperCase() || "—"}\n\n`;
+
+  texto += "💼 *OCUPACIÓN / EMPRENDIMIENTO*\n";
+  texto += `• *Ocupación actual:* ${r.ocupacion?.toUpperCase() || "—"}\n`;
+  texto += `• *Emprendimiento:* ${r.emprendimiento?.toUpperCase() || "—"}\n\n`;
+
+  texto += "🌱 *INTERESES / PARTICIPACIÓN*\n";
+  texto += `• *Hobbies:* ${r.hobbies?.toUpperCase() || "—"}\n`;
+  texto += `• *Participa en comunidad:* ${r.participacion_comunidad?.toUpperCase() || "—"}\n`;
+
+  await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
+}
 
 // ======================= COMANDO /ACTUALIZACION =======================
 bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
