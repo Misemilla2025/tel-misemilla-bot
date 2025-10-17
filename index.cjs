@@ -251,7 +251,7 @@ bot.onText(/\/glosario/i, async (msg) => {
 bot.onText(/^\/misdatos$/, async (msg) => {
   const chatId = msg.chat.id;
 
-  // ✅ Corregido: incluye '@' si el usuario tiene nombre en Telegram
+  // ✅ incluye '@' si el usuario tiene username
   const usuario = msg.from.username
     ? '@' + msg.from.username.toLowerCase()
     : msg.from.id.toString();
@@ -259,11 +259,11 @@ bot.onText(/^\/misdatos$/, async (msg) => {
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // ✅ Busca por Telegram, celular, email o documento
+    // ✅ Busca por Telegram, celular, email o documento (con comillas)
     const { data: registros, error } = await supabase
       .from(TABLE)
       .select("*")
-      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`);
+      .or(`usuario_telegram.eq.'${usuario}',celular.eq.'${usuario}',email.eq.'${usuario}',documento.eq.'${usuario}'`);
 
     if (error) throw error;
 
@@ -286,7 +286,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
     const r = registros[0];
     let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
 
-    // ✅ Formatea los campos de manera legible y en mayúsculas
+    // ✅ Formatea los campos en mayúsculas
     for (const [campo, valor] of Object.entries(r)) {
       if (valor !== null && campo !== "id") {
         const valorMostrar =
@@ -294,9 +294,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
             ? valor
             : valor.toString().toUpperCase();
 
-        // Pone los nombres de campos bonitos
         const nombreCampo = campo.replace(/_/g, " ").toUpperCase();
-
         texto += `• *${nombreCampo}:* ${valorMostrar}\n`;
       }
     }
