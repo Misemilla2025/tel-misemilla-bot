@@ -247,218 +247,128 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// =============== [6] /misdatos con diseño original y búsqueda estricta ===============
-bot.onText(/^\/misdatos\b/i, async (msg) => {
+// ======================= COMANDO /MISDATOS =======================
+bot.onText(/^\/misdatos/, async (msg) => {
   const chatId = msg.chat.id;
-  const rawUser = msg.from.username ? msg.from.username.trim().toLowerCase() : "";
-  const userAt = rawUser ? (rawUser.startsWith("@") ? rawUser : "@" + rawUser) : "";
-  const userBare = rawUser.startsWith("@") ? rawUser.slice(1) : rawUser;
+  const usuario = msg.from.username ? msg.from.username.toLowerCase() : msg.from.id.toString();
 
   await bot.sendMessage(chatId, "🔎 Consultando tus datos, por favor espera...");
 
   try {
-    // Búsqueda exacta: evita coincidencias parciales
-    const { data, error } = await supabase
+    // Búsqueda flexible: toma solo 1 registro para evitar error de múltiples filas
+    const { data: registros, error } = await supabase
       .from(TABLE)
       .select("*")
-      .or(
-        [
-          userAt ? `usuario_telegram.eq.${userAt}` : null,
-          rawUser ? `usuario_telegram.eq.${rawUser}` : null,
-          userBare ? `usuario_telegram.eq.${userBare}` : null,
-        ].filter(Boolean).join(",")
-      );
+      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`)
+      .limit(1);
 
     if (error) throw error;
-
-    // Si no se encuentra → pedir celular
-    if (!data || data.length === 0) {
-      await bot.sendMessage(
-        chatId,
-        "⚠️ No encontré tu registro asociado a este usuario de Telegram.\n\n" +
-        "📲 Por favor envía ahora tu número de celular (solo dígitos, sin +) para buscar tu registro.",
-        { parse_mode: "Markdown" }
-      );
-
-      bot.once("message", async (resp) => {
-        if (!resp || resp.chat.id !== chatId) return;
-        const cel = (resp.text || "").replace(/\D/g, "");
-
-        if (!cel) {
-          await bot.sendMessage(chatId, "❗ Debes enviar solo números (sin espacios ni símbolos).");
-          return;
-        }
-
-        const { data: byPhone, error: errCel } = await supabase
-          .from(TABLE)
-          .select("*")
-          .eq("celular", cel);
-
-        if (errCel) throw errCel;
-        if (!byPhone || byPhone.length === 0) {
-          await bot.sendMessage(
-            chatId,
-            "❌ No se encontró ningún registro con ese número celular.\n" +
-            "Si no recuerdas tu cuenta, usa /restaurar."
-          );
-          return;
-        }
-
-        const r = byPhone[0];
-        const texto = formateaFichaBonita(r);
-        await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
-      });
-
+    if (!registros || registros.length === 0) {
+      await bot.sendMessage(chatId, "⚠️ No encontré tu registro asociado a este Telegram.\nUsa /restaurar para vincular tu cuenta.");
       return;
     }
 
-    const r = data[0];
-    const texto = formateaFichaBonita(r);
-    await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
+    const r = registros[0];
+    let texto = `📘 *TUS DATOS REGISTRADOS*\n\n`;
 
+    texto += `╔💠 *DATOS PERSONALES:*\n`;
+    texto += `• Nombre: ${r.nombre_completo || "—"}\n`;
+    texto += `• Documento: ${r.documento || "—"}\n`;
+    texto += `• Fecha Nac.: ${r.fecha_nacimiento || "—"}\n`;
+    texto += `• Edad: ${r.edad || "—"}\n`;
+    texto += `• Género: ${r.genero || "—"}\n`;
+    texto += `• Escolaridad: ${r.escolaridad || "—"}\n\n`;
+
+    texto += `╠📞 *CONTACTO:*\n`;
+    texto += `• Celular: ${r.celular || "—"}\n`;
+    texto += `• Usuario Telegram: ${r.usuario_telegram || "—"}\n\n`;
+
+    texto += `╠📍 *UBICACIÓN:*\n`;
+    texto += `• País: ${r.pais || "—"}\n`;
+    texto += `• Departamento: ${r.departamento || "—"}\n`;
+    texto += `• Ciudad: ${r.ciudad || "—"}\n`;
+    texto += `• Barrio: ${r.barrio || "—"}\n`;
+    texto += `• Dirección: ${r.direccion || "—"}\n\n`;
+
+    texto += `╠🏠 *HOGAR:*\n`;
+    texto += `• Vivienda Propia: ${r.vivienda_propia || "—"}\n`;
+    texto += `• Zona: ${r.zona || "—"}\n`;
+    texto += `• Estrato: ${r.estrato || "—"}\n`;
+    texto += `• Personas en Hogar: ${r.personas_en_hogar || "—"}\n`;
+    texto += `• Personas que Trabajan: ${r.personas_trabajan || "—"}\n`;
+    texto += `• Adultos Mayores: ${r.adultos_mayores || "—"}\n`;
+    texto += `• Menores: ${r.menores || "—"}\n\n`;
+
+    texto += `╠🧩 *SERVICIOS:*\n`;
+    texto += `• Servicios: ${r.servicios || "—"}\n`;
+    texto += `• Discapacidad: ${r.discapacidad || "—"}\n`;
+    texto += `• Detalle Discapacidad: ${r.detalle_discapacidad || "—"}\n\n`;
+
+    texto += `╠🧠 *INTERESES:*\n`;
+    texto += `• Hobbies: ${r.hobbies || "—"}\n`;
+    texto += `• Emprendimiento: ${r.emprendimiento || "—"}\n\n`;
+
+    texto += `╚🤝 *REFERENCIAS:*\n`;
+    texto += `• Nombre Ref.: ${r.ref_nombre || "—"}\n`;
+    texto += `• Telegram Ref.: ${r.ref_telegram || "—"}\n`;
+    texto += `• WhatsApp Ref.: ${r.ref_whatsapp || "—"}\n\n`;
+
+    texto += `📝 Usa /actualizacion para modificar algún dato.`;
+
+    await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
-    await bot.sendMessage(chatId, "⚠️ Error al consultar tus datos. Intenta de nuevo más tarde.");
+    await bot.sendMessage(chatId, "❌ Error al consultar tus datos.");
   }
 });
 
-// ---------- Helper con diseño y emojis restaurados ----------
-function formateaFichaBonita(r) {
-  let texto = `📘 *TUS DATOS REGISTRADOS*\n\n`;
-
-  texto += `╔💠 *DATOS PERSONALES:*\n`;
-  texto += `• Email: ${r.email || "—"}\n`;
-  texto += `• Nombre: ${r.nombre_completo || "—"}\n`;
-  texto += `• Documento: ${r.documento || "—"}\n`;
-  texto += `• Fecha Nac.: ${r.fecha_nacimiento || "—"}\n`;
-  texto += `• Edad: ${r.edad || "—"}\n`;
-  texto += `• Género: ${r.genero || "—"}\n`;
-  texto += `• Escolaridad: ${r.escolaridad || "—"}\n\n`;
-
-  texto += `╠📞 *CONTACTO:*\n`;
-  texto += `• Celular: ${r.celular || "—"}\n`;
-  texto += `• Usuario Telegram: ${r.usuario_telegram || "—"}\n\n`;
-
-  texto += `╠📍 *UBICACIÓN:*\n`;
-  texto += `• País: ${r.pais || "—"}\n`;
-  texto += `• Departamento: ${r.departamento || "—"}\n`;
-  texto += `• Ciudad: ${r.ciudad || "—"}\n`;
-  texto += `• Barrio: ${r.barrio || "—"}\n`;
-  texto += `• Dirección: ${r.direccion || "—"}\n\n`;
-
-  texto += `╠🏠 *HOGAR:*\n`;
-  texto += `• Vivienda Propia: ${r.vivienda_propia || "—"}\n`;
-  texto += `• Zona: ${r.zona || "—"}\n`;
-  texto += `• Estrato: ${r.estrato || "—"}\n`;
-  texto += `• Personas en Hogar: ${r.personas_en_hogar || "—"}\n`;
-  texto += `• Personas que Trabajan: ${r.personas_trabajan || "—"}\n`;
-  texto += `• Adultos Mayores: ${r.adultos_mayores || "—"}\n`;
-  texto += `• Menores: ${r.menores || "—"}\n\n`;
-
-  texto += `╠🧩 *SERVICIOS:*\n`;
-  texto += `• Servicios: ${r.servicios || "—"}\n`;
-  texto += `• Discapacidad: ${r.discapacidad || "—"}\n`;
-  texto += `• Detalle Discapacidad: ${r.detalle_discapacidad || "—"}\n\n`;
-
-  texto += `╠🧠 *INTERESES:*\n`;
-  texto += `• Hobbies: ${r.hobbies || "—"}\n`;
-  texto += `• Emprendimiento: ${r.emprendimiento || "—"}\n\n`;
-
-  texto += `╚🤝 *REFERENCIAS:*\n`;
-  texto += `• Nombre Ref.: ${r.ref_nombre || "—"}\n`;
-  texto += `• Telegram Ref.: ${r.ref_telegram || "—"}\n`;
-  texto += `• WhatsApp Ref.: ${r.ref_whatsapp || "—"}\n\n`;
-
-  texto += `📝 Usa /actualizacion para modificar algún dato.`;
-  return texto;
-}
-
 // ======================= COMANDO /ACTUALIZACION =======================
-bot.onText(/^\/actualizacion(?:\s+(.+))?/, async (msg, match) => {
+bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
   const chatId = msg.chat.id;
-  const usuario = msg.from.username
-    ? msg.from.username.toLowerCase()
-    : msg.from.id.toString();
+  const texto = match[1]?.trim();
 
-  const entrada = match[1] ? match[1].trim() : "";
-
-  // Si no envió nada, mostrar ayuda
-  if (!entrada) {
+  // Si no especifica campo y valor, mostrar guía
+  if (!texto) {
     await bot.sendMessage(
       chatId,
-      "📝 *ACTUALIZACIÓN DE DATOS*\n\n" +
-        "Usa el formato:\n`/actualizacion campo valor`\n\n" +
-        "📘 *Ejemplo:*\n`/actualizacion ciudad Bogotá`\n\n" +
-        "🧩 Puedes actualizar cualquier campo *excepto* los siguientes:\n" +
-        "• email\n• documento\n• celular\n• usuario_telegram\n\n" +
-        "❌ Si intentas cambiar uno de esos y ya está en uso, será rechazado.",
+      `🛠️ *Guía de actualización de datos*\n\n` +
+      `Usa el formato:\n/actualizacion campo valor\n\n` +
+      `Ejemplo:\n/actualizacion ciudad Bogotá\n\n` +
+      `Si no recuerdas los campos disponibles, usa 👉 /glosario 📘`,
       { parse_mode: "Markdown" }
     );
     return;
   }
 
-  const [campo, ...valorArray] = entrada.split(" ");
-  const valor = valorArray.join(" ").trim();
+  const partes = texto.split(" ");
+  const campo = partes.shift()?.trim();
+  const valor = partes.join(" ").trim();
 
   if (!campo || !valor) {
-    await bot.sendMessage(
-      chatId,
-      "⚠️ Formato incorrecto.\n\nUsa `/actualizacion campo valor`\nEjemplo: `/actualizacion ciudad Bogotá`",
-      { parse_mode: "Markdown" }
-    );
+    await bot.sendMessage(chatId, "⚠️ Debes indicar el campo y el valor. Ejemplo:\n/actualizacion ciudad Bogotá");
     return;
   }
 
-  await bot.sendMessage(
-    chatId,
-    `✏️ Actualizando *${campo}* a *${valor}*...`,
-    { parse_mode: "Markdown" }
-  );
+  const usuario = msg.from.username ? msg.from.username.toLowerCase() : msg.from.id.toString();
 
   try {
-    // Buscar usuario en la tabla
+    // Busca el registro por usuario_telegram, celular, email o documento
     const { data: registros, error: errBuscar } = await supabase
       .from(TABLE)
       .select("*")
-      .or(
-        `usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`
-      );
+      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`)
+      .limit(1);
 
     if (errBuscar) throw errBuscar;
 
     if (!registros || registros.length === 0) {
-      await bot.sendMessage(
-        chatId,
-        "⚠️ No encontré tu registro asociado a este Telegram.\nUsa /restaurar para vincular tu cuenta."
-      );
+      await bot.sendMessage(chatId, "⚠️ No encontré tu registro asociado a este Telegram. Usa /restaurar.");
       return;
     }
 
-    const registro = registros[0];
-    const id = registro.id;
+    const id = registros[0].id; // Se asume que tu tabla tiene campo 'id'
 
-    // Campos protegidos (no se pueden duplicar)
-    const protegidos = ["email", "documento", "celular", "usuario_telegram"];
-
-    if (protegidos.includes(campo)) {
-      const { data: existe, error: errDup } = await supabase
-        .from(TABLE)
-        .select("id")
-        .eq(campo, valor);
-
-      if (errDup) throw errDup;
-
-      if (existe && existe.length > 0 && existe[0].id !== id) {
-        await bot.sendMessage(
-          chatId,
-          `🚫 Ese *${campo}* ya está registrado por otra persona. No se puede actualizar.`,
-          { parse_mode: "Markdown" }
-        );
-        return;
-      }
-    }
-
-    // Ejecutar actualización
+    // Actualiza solo el campo solicitado
     const { error: errUpdate } = await supabase
       .from(TABLE)
       .update({ [campo]: valor })
@@ -468,15 +378,13 @@ bot.onText(/^\/actualizacion(?:\s+(.+))?/, async (msg, match) => {
 
     await bot.sendMessage(
       chatId,
-      `✅ *${campo}* actualizado correctamente a *${valor}*.`,
+      `✅ *Dato actualizado correctamente*\n\n📘 *Campo:* ${campo}\n✏️ *Nuevo valor:* ${valor}`,
       { parse_mode: "Markdown" }
     );
+
   } catch (err) {
     console.error("❌ Error en /actualizacion:", err);
-    await bot.sendMessage(
-      chatId,
-      "⚠️ Ocurrió un error al procesar la actualización. Intenta más tarde."
-    );
+    await bot.sendMessage(chatId, "❌ Ocurrió un error al actualizar tu información.");
   }
 });
 
