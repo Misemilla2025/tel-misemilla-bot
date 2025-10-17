@@ -250,8 +250,10 @@ bot.onText(/\/glosario/i, async (msg) => {
 // ======================= COMANDO /MISDATOS =======================
 bot.onText(/^\/misdatos$/, async (msg) => {
   const chatId = msg.chat.id;
+
+  // 🔹 CORRECCIÓN: siempre antepone '@' al username de Telegram si existe
   const usuario = msg.from.username
-    ? msg.from.username.toLowerCase()
+    ? '@' + msg.from.username.toLowerCase()
     : msg.from.id.toString();
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
@@ -265,12 +267,18 @@ bot.onText(/^\/misdatos$/, async (msg) => {
     if (error) throw error;
 
     if (!registros || registros.length === 0) {
-      await bot.sendMessage(chatId, "⚠️ No encontré tu registro asociado a este Telegram. Usa /restaurar para vincular tu cuenta.");
+      await bot.sendMessage(
+        chatId,
+        "⚠️ No encontré tu registro asociado a este Telegram. Usa /restaurar para vincular tu cuenta."
+      );
       return;
     }
 
     if (registros.length > 1) {
-      await bot.sendMessage(chatId, "⚠️ Se encontraron varios registros con tus datos. Contacta al administrador para corregir duplicados.");
+      await bot.sendMessage(
+        chatId,
+        "⚠️ Se encontraron varios registros con tus datos. Contacta al administrador para corregir duplicados."
+      );
       return;
     }
 
@@ -299,7 +307,10 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
   if (!texto) {
     await bot.sendMessage(
       chatId,
-      "🧩 *Guía de actualización de datos*\n\nUsa el formato:\n`/actualizacion campo valor`\nEjemplo:\n`/actualizacion ciudad Bogotá`\n\nSi no recuerdas los campos disponibles, usa 👉 /glosario 📘",
+      "🧩 *Guía de actualización de datos*\n\n" +
+      "Usa el formato:\n`/actualizacion campo valor`\n" +
+      "Ejemplo:\n`/actualizacion ciudad Bogotá`\n\n" +
+      "Si no recuerdas los campos disponibles, usa 👉 /glosario 📘",
       { parse_mode: "Markdown" }
     );
     return;
@@ -309,8 +320,10 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
   const campo = partes.shift()?.trim();
   const valor = partes.join(" ").trim();
 
-  // Identificar usuario de Telegram o ID numérico
-  const usuario = msg.from.username ? msg.from.username.toLowerCase() : msg.from.id.toString();
+  // 🔹 CORRECCIÓN: siempre antepone '@' si el usuario tiene nombre de Telegram
+  const usuario = msg.from.username
+    ? '@' + msg.from.username.toLowerCase()
+    : msg.from.id.toString();
 
   try {
     // Buscar su registro por Telegram, celular, email o documento
@@ -351,10 +364,18 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
     }
 
     // Actualizar el valor del campo
-    const { error: errUpdate } = await supabase.from(TABLE).update({ [campo]: valor }).eq("id", id);
+    const { error: errUpdate } = await supabase
+      .from(TABLE)
+      .update({ [campo]: valor })
+      .eq("id", id);
+
     if (errUpdate) throw errUpdate;
 
-    await bot.sendMessage(chatId, `✅ *${campo}* actualizado correctamente a *${valor}*.`, { parse_mode: "Markdown" });
+    await bot.sendMessage(
+      chatId,
+      `✅ *${campo}* actualizado correctamente a *${valor}*.`,
+      { parse_mode: "Markdown" }
+    );
 
   } catch (err) {
     console.error("❌ Error en /actualizacion:", err);
