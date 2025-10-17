@@ -280,6 +280,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
           return;
         }
 
+        // Buscar por número de celular
         const { data: coincidencia, error: errCel } = await supabase
           .from(TABLE)
           .select("*")
@@ -287,51 +288,46 @@ bot.onText(/^\/misdatos$/, async (msg) => {
 
         if (errCel) throw errCel;
 
+        // 3️⃣ Si el número no existe
         if (!coincidencia || coincidencia.length === 0) {
           await bot.sendMessage(
             chatId,
-            "⚠️ No encontré ningún registro asociado a ese celular. Usa /restaurar para vincular tu cuenta."
+            "⚠️ No encontré tu registro asociado a ese celular. Usa /restaurar para vincular tu cuenta."
           );
           return;
         }
 
-        // 🔒 Verificar si ya tiene usuario_telegram asignado distinto al actual
         const registro = coincidencia[0];
+
+        // 4️⃣ Si el número está vinculado a otro usuario de Telegram
         if (
           registro.usuario_telegram &&
           registro.usuario_telegram !== username
         ) {
           await bot.sendMessage(
             chatId,
-            "🚫 Ese número ya está vinculado a otro usuario de Telegram. No se puede reasignar automáticamente."
+            "🚫 Este número ya está registrado con otro usuario de Telegram. No se puede consultar desde aquí."
           );
           return;
         }
 
-        // 🔁 Actualizar usuario_telegram si está vacío
+        // 5️⃣ Si el número es correcto pero no tiene Telegram vinculado → mostrar datos
         if (!registro.usuario_telegram) {
-          const { error: updateError } = await supabase
-            .from(TABLE)
-            .update({ usuario_telegram: username })
-            .eq("celular", celular);
-
-          if (!updateError) {
-            await bot.sendMessage(
-              chatId,
-              "✅ Se vinculó correctamente tu cuenta de Telegram con tu registro."
-            );
-          }
+          await bot.sendMessage(
+            chatId,
+            "✅ Número verificado correctamente. Mostrando la información registrada..."
+          );
+          enviarFichaDatos(chatId, registro, true);
+          return;
         }
-
-        enviarFichaDatos(chatId, registro);
       });
 
       return;
     }
 
-    // 3️⃣ Si encontró por Telegram
+    // 6️⃣ Si encontró por usuario de Telegram
     const registro = registros[0];
-    enviarFichaDatos(chatId, registro);
+    enviarFichaDatos(chatId, registro, false);
 
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
@@ -341,7 +337,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
 
 
 // ======================= FUNCIÓN REUTILIZABLE =======================
-async function enviarFichaDatos(chatId, r) {
+async function enviarFichaDatos(chatId, r, sinTelegram = false) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
 
   texto += "👤 *DATOS PERSONALES*\n";
@@ -374,7 +370,13 @@ async function enviarFichaDatos(chatId, r) {
 
   texto += "🌱 *INTERESES / PARTICIPACIÓN*\n";
   texto += `• *Hobbies:* ${r.hobbies?.toUpperCase() || "—"}\n`;
-  texto += `• *Participa en comunidad:* ${r.participacion_comunidad?.toUpperCase() || "—"}\n`;
+  texto += `• *Participa en comunidad:* ${r.participacion_comunidad?.toUpperCase() || "—"}\n\n`;
+
+  if (sinTelegram) {
+    texto += "🔐 *Nota:* Este registro no tiene usuario de Telegram vinculado actualmente.\n\n";
+  }
+
+  texto += "ℹ️ Si deseas corregir algún dato, usa el comando /actualizacion";
 
   await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
 }
