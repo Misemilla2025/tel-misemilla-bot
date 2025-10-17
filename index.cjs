@@ -248,77 +248,45 @@ bot.onText(/\/glosario/i, async (msg) => {
 });
 
 // ======================= COMANDO /MISDATOS =======================
-bot.onText(/^\/misdatos/, async (msg) => {
+bot.onText(/^\/misdatos$/, async (msg) => {
   const chatId = msg.chat.id;
-  const usuario = msg.from.username ? msg.from.username.toLowerCase() : msg.from.id.toString();
+  const usuario = msg.from.username
+    ? msg.from.username.toLowerCase()
+    : msg.from.id.toString();
 
-  await bot.sendMessage(chatId, "🔎 Consultando tus datos, por favor espera...");
+  await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // Búsqueda flexible: toma solo 1 registro para evitar error de múltiples filas
     const { data: registros, error } = await supabase
       .from(TABLE)
       .select("*")
-      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`)
-      .limit(1);
+      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`);
 
     if (error) throw error;
+
     if (!registros || registros.length === 0) {
-      await bot.sendMessage(chatId, "⚠️ No encontré tu registro asociado a este Telegram.\nUsa /restaurar para vincular tu cuenta.");
+      await bot.sendMessage(chatId, "⚠️ No encontré tu registro asociado a este Telegram. Usa /restaurar para vincular tu cuenta.");
+      return;
+    }
+
+    if (registros.length > 1) {
+      await bot.sendMessage(chatId, "⚠️ Se encontraron varios registros con tus datos. Contacta al administrador para corregir duplicados.");
       return;
     }
 
     const r = registros[0];
-    let texto = `📘 *TUS DATOS REGISTRADOS*\n\n`;
+    let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
 
-    texto += `╔💠 *DATOS PERSONALES:*\n`;
-    texto += `• Nombre: ${r.nombre_completo || "—"}\n`;
-    texto += `• Documento: ${r.documento || "—"}\n`;
-    texto += `• Fecha Nac.: ${r.fecha_nacimiento || "—"}\n`;
-    texto += `• Edad: ${r.edad || "—"}\n`;
-    texto += `• Género: ${r.genero || "—"}\n`;
-    texto += `• Escolaridad: ${r.escolaridad || "—"}\n\n`;
-
-    texto += `╠📞 *CONTACTO:*\n`;
-    texto += `• Celular: ${r.celular || "—"}\n`;
-    texto += `• Usuario Telegram: ${r.usuario_telegram || "—"}\n\n`;
-
-    texto += `╠📍 *UBICACIÓN:*\n`;
-    texto += `• País: ${r.pais || "—"}\n`;
-    texto += `• Departamento: ${r.departamento || "—"}\n`;
-    texto += `• Ciudad: ${r.ciudad || "—"}\n`;
-    texto += `• Barrio: ${r.barrio || "—"}\n`;
-    texto += `• Dirección: ${r.direccion || "—"}\n\n`;
-
-    texto += `╠🏠 *HOGAR:*\n`;
-    texto += `• Vivienda Propia: ${r.vivienda_propia || "—"}\n`;
-    texto += `• Zona: ${r.zona || "—"}\n`;
-    texto += `• Estrato: ${r.estrato || "—"}\n`;
-    texto += `• Personas en Hogar: ${r.personas_en_hogar || "—"}\n`;
-    texto += `• Personas que Trabajan: ${r.personas_trabajan || "—"}\n`;
-    texto += `• Adultos Mayores: ${r.adultos_mayores || "—"}\n`;
-    texto += `• Menores: ${r.menores || "—"}\n\n`;
-
-    texto += `╠🧩 *SERVICIOS:*\n`;
-    texto += `• Servicios: ${r.servicios || "—"}\n`;
-    texto += `• Discapacidad: ${r.discapacidad || "—"}\n`;
-    texto += `• Detalle Discapacidad: ${r.detalle_discapacidad || "—"}\n\n`;
-
-    texto += `╠🧠 *INTERESES:*\n`;
-    texto += `• Hobbies: ${r.hobbies || "—"}\n`;
-    texto += `• Emprendimiento: ${r.emprendimiento || "—"}\n\n`;
-
-    texto += `╚🤝 *REFERENCIAS:*\n`;
-    texto += `• Nombre Ref.: ${r.ref_nombre || "—"}\n`;
-    texto += `• Telegram Ref.: ${r.ref_telegram || "—"}\n`;
-    texto += `• WhatsApp Ref.: ${r.ref_whatsapp || "—"}\n\n`;
-
-    texto += `📝 Usa /actualizacion para modificar algún dato.`;
+    for (const [campo, valor] of Object.entries(r)) {
+      if (valor !== null && campo !== "id") {
+        texto += `• *${campo}:* ${valor}\n`;
+      }
+    }
 
     await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
-    await bot.sendMessage(chatId, "❌ Error al consultar tus datos.");
+    await bot.sendMessage(chatId, "❌ Error al consultar tus datos. Intenta más tarde.");
   }
 });
 
@@ -327,14 +295,11 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const texto = match[1]?.trim();
 
-  // Si no especifica campo y valor, mostrar guía
+  // Si no se escribe campo ni valor, muestra la guía
   if (!texto) {
     await bot.sendMessage(
       chatId,
-      `🛠️ *Guía de actualización de datos*\n\n` +
-      `Usa el formato:\n/actualizacion campo valor\n\n` +
-      `Ejemplo:\n/actualizacion ciudad Bogotá\n\n` +
-      `Si no recuerdas los campos disponibles, usa 👉 /glosario 📘`,
+      "🧩 *Guía de actualización de datos*\n\nUsa el formato:\n`/actualizacion campo valor`\nEjemplo:\n`/actualizacion ciudad Bogotá`\n\nSi no recuerdas los campos disponibles, usa 👉 /glosario 📘",
       { parse_mode: "Markdown" }
     );
     return;
@@ -344,47 +309,56 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
   const campo = partes.shift()?.trim();
   const valor = partes.join(" ").trim();
 
-  if (!campo || !valor) {
-    await bot.sendMessage(chatId, "⚠️ Debes indicar el campo y el valor. Ejemplo:\n/actualizacion ciudad Bogotá");
-    return;
-  }
-
+  // Identificar usuario de Telegram o ID numérico
   const usuario = msg.from.username ? msg.from.username.toLowerCase() : msg.from.id.toString();
 
   try {
-    // Busca el registro por usuario_telegram, celular, email o documento
+    // Buscar su registro por Telegram, celular, email o documento
     const { data: registros, error: errBuscar } = await supabase
       .from(TABLE)
       .select("*")
-      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`)
-      .limit(1);
+      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`);
 
     if (errBuscar) throw errBuscar;
 
+    // Validar si no hay registro
     if (!registros || registros.length === 0) {
       await bot.sendMessage(chatId, "⚠️ No encontré tu registro asociado a este Telegram. Usa /restaurar.");
       return;
     }
 
-    const id = registros[0].id; // Se asume que tu tabla tiene campo 'id'
+    // Validar si hay duplicados
+    if (registros.length > 1) {
+      await bot.sendMessage(chatId, "⚠️ Se encontraron duplicados. Contacta al administrador para resolverlo.");
+      return;
+    }
 
-    // Actualiza solo el campo solicitado
-    const { error: errUpdate } = await supabase
-      .from(TABLE)
-      .update({ [campo]: valor })
-      .eq("id", id);
+    const id = registros[0].id;
+    const camposProtegidos = ["email", "documento", "celular", "usuario_telegram"];
 
+    // Evitar duplicación de campos críticos
+    if (camposProtegidos.includes(campo)) {
+      const { data: existe, error: errDup } = await supabase
+        .from(TABLE)
+        .select("id")
+        .eq(campo, valor);
+
+      if (errDup) throw errDup;
+      if (existe && existe.length > 0 && existe[0].id !== id) {
+        await bot.sendMessage(chatId, `🚫 Ese ${campo} ya está en uso. No se puede actualizar.`);
+        return;
+      }
+    }
+
+    // Actualizar el valor del campo
+    const { error: errUpdate } = await supabase.from(TABLE).update({ [campo]: valor }).eq("id", id);
     if (errUpdate) throw errUpdate;
 
-    await bot.sendMessage(
-      chatId,
-      `✅ *Dato actualizado correctamente*\n\n📘 *Campo:* ${campo}\n✏️ *Nuevo valor:* ${valor}`,
-      { parse_mode: "Markdown" }
-    );
+    await bot.sendMessage(chatId, `✅ *${campo}* actualizado correctamente a *${valor}*.`, { parse_mode: "Markdown" });
 
   } catch (err) {
     console.error("❌ Error en /actualizacion:", err);
-    await bot.sendMessage(chatId, "❌ Ocurrió un error al actualizar tu información.");
+    await bot.sendMessage(chatId, "❌ Error al procesar tu actualización. Intenta más tarde.");
   }
 });
 
@@ -570,3 +544,5 @@ bot.on("message", async (msg) => {
 bot.getMe()
   .then(info => console.log(`✅ Bot conectado como: @${info.username}`))
   .catch(err  => console.error("❌ Error iniciando el bot:", err.message));
+
+setInterval(() => {}, 10000); // Evita que Render cierre el proceso
