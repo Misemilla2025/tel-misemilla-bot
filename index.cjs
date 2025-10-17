@@ -258,14 +258,14 @@ bot.onText(/^\/misdatos$/, async (msg) => {
 
   try {
     // 1️⃣ Buscar por usuario de Telegram
-    let { data: registros, error } = await supabase
+    const { data: registros, error } = await supabase
       .from(TABLE)
       .select("*")
       .eq("usuario_telegram", username);
 
     if (error) throw error;
 
-    // 2️⃣ Si no lo encuentra, pedir celular
+    // 2️⃣ Si no hay coincidencia → pedir celular
     if (!registros || registros.length === 0) {
       await bot.sendMessage(
         chatId,
@@ -275,12 +275,13 @@ bot.onText(/^\/misdatos$/, async (msg) => {
       bot.once("message", async (resMsg) => {
         const celular = resMsg.text.trim();
 
+        // Validar formato de número
         if (!/^\d{7,15}$/.test(celular)) {
           await bot.sendMessage(chatId, "⚠️ El número no es válido. Intenta nuevamente sin espacios ni símbolos.");
           return;
         }
 
-        // Buscar por número de celular en la misma tabla
+        // 3️⃣ Buscar por número de celular en la misma tabla
         const { data: coincidencia, error: errCel } = await supabase
           .from(TABLE)
           .select("*")
@@ -288,38 +289,40 @@ bot.onText(/^\/misdatos$/, async (msg) => {
 
         if (errCel) throw errCel;
 
-        // 3️⃣ Si no hay coincidencia en esta tabla
+        // 4️⃣ Si el número no existe en esta tabla
         if (!coincidencia || coincidencia.length === 0) {
           await bot.sendMessage(
             chatId,
-            "⚠️ No encontré tu registro asociado a ese celular dentro de esta base. Usa /restaurar para vincular tu cuenta."
+            "⚠️ No encontré tu registro asociado a ese celular. Usa /restaurar para vincular tu cuenta."
           );
           return;
         }
 
         const registro = coincidencia[0];
+        const vinculo = registro.usuario_telegram ? registro.usuario_telegram.trim().toLowerCase() : "";
+        const actual = username.trim().toLowerCase();
 
-        // 4️⃣ Si el número está vinculado a otro Telegram diferente
-        if (registro.usuario_telegram && registro.usuario_telegram !== username) {
+        // 5️⃣ Si el número pertenece a otro usuario de Telegram diferente
+        if (vinculo && vinculo !== actual) {
           await bot.sendMessage(
             chatId,
-            "🚫 Este número ya está vinculado a otro usuario de Telegram. No se puede consultar desde aquí."
+            "🚫 Este número ya está registrado con otro usuario de Telegram. No se puede consultar desde aquí."
           );
           return;
         }
 
-        // 5️⃣ Si el número coincide en esta tabla, aunque no tenga Telegram → mostrar datos
+        // ✅ 6️⃣ Si el número coincide con la tabla actual (sin Telegram o con el mismo usuario)
         await bot.sendMessage(
           chatId,
-          "✅ Número verificado correctamente. Mostrando la información registrada..."
+          "✅ Número verificado correctamente. Mostrando tu información registrada..."
         );
-        enviarFichaDatos(chatId, registro, !registro.usuario_telegram);
+        enviarFichaDatos(chatId, registro, !vinculo);
       });
 
       return;
     }
 
-    // 6️⃣ Si encontró por usuario de Telegram
+    // 7️⃣ Si encontró por usuario de Telegram directamente
     const registro = registros[0];
     enviarFichaDatos(chatId, registro, false);
 
@@ -330,7 +333,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
 });
 
 
-// ======================= FUNCIÓN REUTILIZABLE =======================
+// ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r, sinTelegram = false) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
 
@@ -367,7 +370,7 @@ async function enviarFichaDatos(chatId, r, sinTelegram = false) {
   texto += `• *Participa en comunidad:* ${r.participacion_comunidad?.toUpperCase() || "—"}\n\n`;
 
   if (sinTelegram) {
-    texto += "🔐 *Nota:* Este registro no tiene usuario de Telegram vinculado actualmente.\n\n";
+    texto += "🔐 *Nota:* Este registro aún no tiene usuario de Telegram vinculado.\n\n";
   }
 
   texto += "ℹ️ Si deseas corregir algún dato, usa el comando /actualizacion";
