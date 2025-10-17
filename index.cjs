@@ -251,39 +251,32 @@ bot.onText(/\/glosario/i, async (msg) => {
 bot.onText(/^\/misdatos$/, async (msg) => {
   const chatId = msg.chat.id;
 
-  // ✅ Detectar usuario de Telegram o usar su ID si no tiene username
-  const usuario = msg.from.username
+  const usuarioTelegram = msg.from.username
     ? '@' + msg.from.username.toLowerCase()
     : msg.from.id.toString();
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    let registros = [];
-    let error = null;
-
-    // 🔹 1️⃣ Buscar por usuario_telegram
-    let res = await supabase
+    // 1️⃣ Buscar primero por usuario de Telegram
+    let { data: registros, error } = await supabase
       .from(TABLE)
       .select("*")
-      .eq("usuario_telegram", usuario);
-
-    registros = res.data;
-    error = res.error;
-
-    // 🔹 2️⃣ Si no encuentra, intenta buscar por celular
-    if ((!registros || registros.length === 0) && !error) {
-      res = await supabase
-        .from(TABLE)
-        .select("*")
-        .eq("celular", usuario);
-      registros = res.data;
-      error = res.error;
-    }
+      .eq("usuario_telegram", usuarioTelegram);
 
     if (error) throw error;
 
-    // ⚠️ Si no hay registro
+    // 2️⃣ Si no encuentra por Telegram, buscar por celular
+    if (!registros || registros.length === 0) {
+      const { data: porCelular, error: errCel } = await supabase
+        .from(TABLE)
+        .select("*")
+        .eq("celular", usuarioTelegram);
+
+      if (errCel) throw errCel;
+      registros = porCelular;
+    }
+
     if (!registros || registros.length === 0) {
       await bot.sendMessage(
         chatId,
@@ -292,7 +285,6 @@ bot.onText(/^\/misdatos$/, async (msg) => {
       return;
     }
 
-    // ⚠️ Si hay duplicados
     if (registros.length > 1) {
       await bot.sendMessage(
         chatId,
@@ -301,25 +293,41 @@ bot.onText(/^\/misdatos$/, async (msg) => {
       return;
     }
 
-    // ✅ Mostrar los datos formateados
+    // 🧩 Ficha de datos del glosario
     const r = registros[0];
-    let texto =
-      "📋 *TUS DATOS REGISTRADOS*\n\n" +
-      "🧾 *Consulta actualizada exitosamente*\n\n";
+    let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
 
-    for (const [campo, valor] of Object.entries(r)) {
-      if (valor !== null && campo !== "id") {
-        const valorMostrar =
-          ["email", "usuario_telegram"].includes(campo)
-            ? valor
-            : valor.toString().toUpperCase();
+    texto += "👤 *DATOS PERSONALES*\n";
+    texto += `• *Nombre:* ${r.nombre_completo?.toUpperCase() || "—"}\n`;
+    texto += `• *Documento:* ${r.documento?.toUpperCase() || "—"}\n`;
+    texto += `• *Género:* ${r.genero?.toUpperCase() || "—"}\n`;
+    texto += `• *Fecha de nacimiento:* ${r.fecha_nacimiento || "—"}\n\n`;
 
-        const nombreCampo = campo.replace(/_/g, " ").toUpperCase();
-        texto += `• *${nombreCampo}:* ${valorMostrar}\n`;
-      }
-    }
+    texto += "📞 *CONTACTO*\n";
+    texto += `• *Celular:* ${r.celular || "—"}\n`;
+    texto += `• *Email:* ${r.email || "—"}\n`;
+    texto += `• *Usuario Telegram:* ${r.usuario_telegram || "—"}\n\n`;
 
-    texto += "\n✅ Verifica que tus datos estén correctos. Usa `/actualizacion campo valor` si deseas cambiar alguno.";
+    texto += "🏠 *UBICACIÓN*\n";
+    texto += `• *Ciudad:* ${r.ciudad?.toUpperCase() || "—"}\n`;
+    texto += `• *Dirección:* ${r.direccion?.toUpperCase() || "—"}\n\n`;
+
+    texto += "👨‍👩‍👧‍👦 *HOGAR*\n";
+    texto += `• *Número de integrantes:* ${r.num_integrantes || "—"}\n`;
+    texto += `• *Niños:* ${r.ninos || "—"}\n`;
+    texto += `• *Adultos mayores:* ${r.adultos_mayores || "—"}\n\n`;
+
+    texto += "💡 *SERVICIOS Y APOYOS*\n";
+    texto += `• *Recibe ayudas:* ${r.recibe_ayudas?.toUpperCase() || "—"}\n`;
+    texto += `• *Servicio de salud:* ${r.servicio_salud?.toUpperCase() || "—"}\n\n`;
+
+    texto += "💼 *OCUPACIÓN / EMPRENDIMIENTO*\n";
+    texto += `• *Ocupación actual:* ${r.ocupacion?.toUpperCase() || "—"}\n`;
+    texto += `• *Emprendimiento:* ${r.emprendimiento?.toUpperCase() || "—"}\n\n`;
+
+    texto += "🌱 *INTERESES / PARTICIPACIÓN*\n";
+    texto += `• *Hobbies:* ${r.hobbies?.toUpperCase() || "—"}\n`;
+    texto += `• *Participa en comunidad:* ${r.participacion_comunidad?.toUpperCase() || "—"}\n`;
 
     await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
   } catch (err) {
