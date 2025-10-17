@@ -251,7 +251,7 @@ bot.onText(/\/glosario/i, async (msg) => {
 bot.onText(/^\/misdatos$/, async (msg) => {
   const chatId = msg.chat.id;
 
-  // 🔹 CORRECCIÓN: siempre antepone '@' al username de Telegram si existe
+  // ✅ Corregido: incluye '@' si el usuario tiene nombre en Telegram
   const usuario = msg.from.username
     ? '@' + msg.from.username.toLowerCase()
     : msg.from.id.toString();
@@ -259,6 +259,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
+    // ✅ Busca por Telegram, celular, email o documento
     const { data: registros, error } = await supabase
       .from(TABLE)
       .select("*")
@@ -277,7 +278,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
     if (registros.length > 1) {
       await bot.sendMessage(
         chatId,
-        "⚠️ Se encontraron varios registros con tus datos. Contacta al administrador para corregir duplicados."
+        "⚠️ Se encontraron varios registros asociados. Contacta al administrador para resolver duplicados."
       );
       return;
     }
@@ -285,16 +286,28 @@ bot.onText(/^\/misdatos$/, async (msg) => {
     const r = registros[0];
     let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
 
+    // ✅ Formatea los campos de manera legible y en mayúsculas
     for (const [campo, valor] of Object.entries(r)) {
       if (valor !== null && campo !== "id") {
-        texto += `• *${campo}:* ${valor}\n`;
+        const valorMostrar =
+          ["email", "usuario_telegram"].includes(campo)
+            ? valor
+            : valor.toString().toUpperCase();
+
+        // Pone los nombres de campos bonitos
+        const nombreCampo = campo.replace(/_/g, " ").toUpperCase();
+
+        texto += `• *${nombreCampo}:* ${valorMostrar}\n`;
       }
     }
 
     await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
-    await bot.sendMessage(chatId, "❌ Error al consultar tus datos. Intenta más tarde.");
+    await bot.sendMessage(
+      chatId,
+      "❌ Error al consultar tus datos. Intenta más tarde."
+    );
   }
 });
 
