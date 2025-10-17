@@ -246,184 +246,140 @@ bot.onText(/\/glosario/i, async (msg) => {
 
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
-// =============== [6] /misdatos: por @usuario o, si no hay, por celular ===============
-bot.onText(/^\/misdatos\b/i, async (msg) => {
-  const c = msg.chat.id;
-  const u = tUser(msg);
 
-  // Si no tiene username → pedir celular sin '+'
-  if (!u) {
-    await send(c,
-"⚠️ No detecto tu *username* de Telegram.\n\n" +
-"Puedes *enviar ahora tu número celular registrado* (ejemplo: `3001234567`) y busco tu registro por celular.");
-    fs.writeFileSync(MISDATOS_STATE, JSON.stringify({ estado: "esperando_celular", chatId: c }));
-    return;
-  }
+// ======================= COMANDO /MISDATOS =======================
+bot.onText(/^\/misdatos/, async (msg) => {
+  const chatId = msg.chat.id;
+  const usuario = msg.from.username ? msg.from.username.toLowerCase() : msg.from.id.toString();
 
-  const ut = normUserForDB(u); // @usuario
-  let { data, error } = await supabase
-    .from(TABLE)
-    .select("*")
-    .or(`usuario_telegram.eq.${ut},usuario_telegram.ilike.%${u}%`)
-    .maybeSingle();
+  await bot.sendMessage(chatId, "🔎 Consultando tus datos, por favor espera...");
 
-  if (error) { console.error(error); await send(c,"❌ Error al consultar tus datos."); return; }
-
-  if (!data) {
-    await send(c,
-"⚠️ No encontré datos asociados a tu *usuario de Telegram*.\n\n" +
-"Puedes *enviar ahora tu número celular registrado* (ejemplo: `3001234567`) y busco tu registro por celular.");
-    fs.writeFileSync(MISDATOS_STATE, JSON.stringify({ estado: "esperando_celular", chatId: c }));
-    return;
-  }
-
-  const d = data;
-  let out = `📄 *Tus datos registrados:*\n\n`;
-  for (const f of fieldList()) out += `• ${f}: ${d[f] || "Sin registrar"}\n`;
-  out += `\n📅 *Actualizado el* ${fechaCorta()}`;
-  await send(c, out);
-});
-
-// Respuesta con celular cuando quedó en espera por /misdatos
-bot.on("message", async (msg) => {
-  const c   = msg.chat.id;
-  const txt = (msg.text || "").trim();
-
-  if (!fs.existsSync(MISDATOS_STATE)) return;
-  let st = JSON.parse(fs.readFileSync(MISDATOS_STATE, "utf8"));
-  if (st.chatId !== c || st.estado !== "esperando_celular") return;
-
-  // Buscar por celular exacto o ilike (sin '+')
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select("*")
-    .or(`celular.eq.${txt},celular.ilike.%${txt}%`)
-    .maybeSingle();
-
-  fs.unlinkSync(MISDATOS_STATE);
-
-  if (error) { console.error(error); await send(c,"❌ Error al consultar por celular."); return; }
-  if (!data) { await send(c,"❌ No se encontró ningún registro con ese *número celular*."); return; }
-
-  const d = data;
-  let out = `📄 *Tus datos registrados:*\n\n`;
-  for (const f of fieldList()) out += `• ${f}: ${d[f] || "Sin registrar"}\n`;
-  out += `\n📅 *Actualizado el* ${fechaCorta()}`;
-  await send(c, out);
-});
-
-// =============== [7] /actualizacion con confirmación para sensibles ===============
-bot.onText(/^\/actualizacion(?:\s+(.+))?/i, async (msg, match) => {
-  const c = msg.chat.id;
-  const u = tUser(msg);
-
-  // Sin argumentos → guía compacta
-  if (!match[1]) {
-    await send(c,
-"🛠️ *Guía de actualización de datos*\n\n" +
-"Usa el formato:\n`/actualizacion campo valor`\n" +
-"Ejemplo:\n`/actualizacion ciudad Bogotá`\n\n" +
-"Si no recuerdas los campos disponibles, usa 👉 `/glosario` 📘");
-    return;
-  }
-
-  if (!u) { await send(c,"⚠️ No detecto tu *username* de Telegram. Configúralo o usa */restaurar*."); return; }
-
-  const ut = normUserForDB(u);
-  const { data: reg, error: findErr } = await supabase
-    .from(TABLE)
-    .select("*")
-    .or(`usuario_telegram.eq.${ut},usuario_telegram.ilike.%${u}%`)
-    .maybeSingle();
-
-  if (findErr || !reg) { await send(c,"⚠️ No encontré tu registro asociado a este Telegram. Usa */restaurar*."); return; }
-
-  const args = match[1].trim().split(" ");
-  if (args.length < 2) { await send(c,"⚠️ Formato incorrecto.\nUsa `/actualizacion campo valor`"); return; }
-
-  const campo = args[0].trim().toLowerCase();
-  const valor = args.slice(1).join(" ").trim();
-
-  if (!fieldList().includes(campo)) { await send(c,"❌ El campo indicado no es válido. Usa `/glosario`."); return; }
-
-  // Normalización / mayúsculas
-  let nuevoValor = valor;
-  if (!NO_UPPER.has(campo)) nuevoValor = valor.toUpperCase();
-  if (campo === "usuario_telegram") {
-    if (!valor.startsWith("@")) { await send(c,"⚠️ Escribe el *usuario de Telegram* con *@* (ej: `@miusuario`)."); return; }
-    nuevoValor = normUserForDB(valor);
-  }
-
-  // Evita actualizar con el mismo valor
-  const { data: actual } = await supabase.from(TABLE).select(campo).eq("id", reg.id).single();
-  if (actual && actual[campo] === nuevoValor) {
-    await send(c, `⚠️ El valor de *${campo}* ya es *${nuevoValor}*. No se realizaron cambios.`);
-    return;
-  }
-
-  // Si es sensible, confirmación previa y chequeo de duplicados
-  if (SENSITIVE.has(campo)) {
-    // Chequeo de duplicado (otro registro con el mismo valor)
-    const { data: existe } = await supabase
+  try {
+    // Búsqueda flexible por Telegram, celular, email o documento
+    const { data: registros, error } = await supabase
       .from(TABLE)
-      .select("id")
-      .eq(campo, nuevoValor)
-      .not("id", "eq", reg.id)
-      .maybeSingle();
+      .select("*")
+      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`);
 
-    if (existe) { await send(c, "🚫 Ese valor ya está registrado en otra cuenta. No se puede duplicar."); return; }
+    if (error) throw error;
 
-    await send(c,
-`⚠️ *Alerta:* El campo *${campo}* es un dato sensible.
-Este cambio puede afectar tu acceso.
-¿Deseas continuar con la actualización? Responde *sí* o *no*.`);
-    fs.writeFileSync(PENDIENTE_STATE, JSON.stringify({ id: reg.id, campo, nuevoValor }));
-    return;
+    if (!registros || registros.length === 0) {
+      await bot.sendMessage(chatId, "⚠️ No encontré tu registro asociado a este Telegram.\nUsa /restaurar para vincular tu cuenta.");
+      return;
+    }
+
+    const r = registros[0];
+    let texto = `📘 *TUS DATOS REGISTRADOS*\n\n`;
+
+    texto += `╔💠 *DATOS PERSONALES:*\n`;
+    texto += `• Nombre: ${r.nombre_completo || "—"}\n`;
+    texto += `• Documento: ${r.documento || "—"}\n`;
+    texto += `• Fecha Nac.: ${r.fecha_nacimiento || "—"}\n`;
+    texto += `• Edad: ${r.edad || "—"}\n`;
+    texto += `• Género: ${r.genero || "—"}\n`;
+    texto += `• Escolaridad: ${r.escolaridad || "—"}\n\n`;
+
+    texto += `╠📞 *CONTACTO:*\n`;
+    texto += `• Celular: ${r.celular || "—"}\n`;
+    texto += `• Usuario Telegram: ${r.usuario_telegram || "—"}\n\n`;
+
+    texto += `╠📍 *UBICACIÓN:*\n`;
+    texto += `• País: ${r.pais || "—"}\n`;
+    texto += `• Departamento: ${r.departamento || "—"}\n`;
+    texto += `• Ciudad: ${r.ciudad || "—"}\n`;
+    texto += `• Barrio: ${r.barrio || "—"}\n`;
+    texto += `• Dirección: ${r.direccion || "—"}\n\n`;
+
+    texto += `╠🏠 *HOGAR:*\n`;
+    texto += `• Vivienda Propia: ${r.vivienda_propia || "—"}\n`;
+    texto += `• Zona: ${r.zona || "—"}\n`;
+    texto += `• Estrato: ${r.estrato || "—"}\n`;
+    texto += `• Personas en Hogar: ${r.personas_en_hogar || "—"}\n`;
+    texto += `• Personas que Trabajan: ${r.personas_trabajan || "—"}\n`;
+    texto += `• Adultos Mayores: ${r.adultos_mayores || "—"}\n`;
+    texto += `• Menores: ${r.menores || "—"}\n\n`;
+
+    texto += `╠🧩 *SERVICIOS:*\n`;
+    texto += `• Servicios: ${r.servicios || "—"}\n`;
+    texto += `• Discapacidad: ${r.discapacidad || "—"}\n`;
+    texto += `• Detalle Discapacidad: ${r.detalle_discapacidad || "—"}\n\n`;
+
+    texto += `╠🧠 *INTERESES:*\n`;
+    texto += `• Hobbies: ${r.hobbies || "—"}\n`;
+    texto += `• Emprendimiento: ${r.emprendimiento || "—"}\n\n`;
+
+    texto += `╚🤝 *REFERENCIAS:*\n`;
+    texto += `• Nombre Ref.: ${r.ref_nombre || "—"}\n`;
+    texto += `• Telegram Ref.: ${r.ref_telegram || "—"}\n`;
+    texto += `• WhatsApp Ref.: ${r.ref_whatsapp || "—"}\n\n`;
+
+    texto += `📝 Usa /actualizacion para modificar algún dato.`;
+
+    await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
+  } catch (err) {
+    console.error("❌ Error en /misdatos:", err);
+    await bot.sendMessage(chatId, "⚠️ Error al consultar tus datos. Intenta de nuevo más tarde.");
   }
-
-  // No sensible → actualizar directo
-  const { error: updErr } = await supabase
-    .from(TABLE)
-    .update({ [campo]: nuevoValor, ultima_actualizacion: new Date().toISOString(), origen: "actualizacion_tg" })
-    .eq("id", reg.id);
-
-  if (updErr) { console.error(updErr); await send(c, "❌ Ocurrió un error al actualizar tus datos."); return; }
-
-  await send(c, `✅ Tu campo *${campo}* ha sido actualizado a:\n*${nuevoValor}*\n\n📅 *Actualizado el* ${fechaCorta()}`);
 });
 
-// Confirmación sí/no para sensibles
-bot.on("message", async (msg) => {
-  const c = msg.chat.id;
-  const t = (msg.text || "").trim().toLowerCase();
+// ======================= COMANDO /ACTUALIZACION =======================
+bot.onText(/^\/actualizacion (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const usuario = msg.from.username ? msg.from.username.toLowerCase() : msg.from.id.toString();
+  const entrada = match[1].trim();
 
-  if (!fs.existsSync(PENDIENTE_STATE)) return;
-  if (!["sí","si","no"].includes(t)) return;
+  // Detectar formato "campo valor"
+  const [campo, ...valorArray] = entrada.split(" ");
+  const valor = valorArray.join(" ").trim();
 
-  const { id, campo, nuevoValor } = JSON.parse(fs.readFileSync(PENDIENTE_STATE, "utf8"));
-
-  if (t === "no") {
-    await send(c, "❌ Actualización cancelada. No se realizaron cambios.");
-    fs.unlinkSync(PENDIENTE_STATE);
+  if (!campo || !valor) {
+    await bot.sendMessage(chatId, "⚠️ Usa el formato correcto:\n`/actualizacion campo valor`\n\nEjemplo: `/actualizacion ciudad Bogotá`", {
+      parse_mode: "Markdown",
+    });
     return;
   }
 
-  // Intentar actualizar (si falla por unique, informamos)
-  const { error: updErr } = await supabase
-    .from(TABLE)
-    .update({ [campo]: nuevoValor, ultima_actualizacion: new Date().toISOString(), origen: "actualizacion_sensible_tg" })
-    .eq("id", id);
+  await bot.sendMessage(chatId, `✏️ Actualizando *${campo}* a *${valor}*...`, { parse_mode: "Markdown" });
 
-  if (updErr) {
-    const msgErr = (updErr.code === "23505" || (updErr.message || "").toLowerCase().includes("duplicate"))
-      ? "🚫 Ese valor ya está registrado en otra cuenta. No se puede duplicar."
-      : "❌ No se pudo actualizar el dato. Intenta nuevamente.";
-    await send(c, msgErr);
-  } else {
-    await send(c, `✅ Tu campo *${campo}* fue actualizado correctamente a *${nuevoValor}*.\n📅 *Actualizado el* ${fechaCorta()}`);
+  try {
+    // Verificar existencia del usuario
+    const { data: registro, error: errBuscar } = await supabase
+      .from(TABLE)
+      .select("*")
+      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`);
+
+    if (errBuscar) throw errBuscar;
+    if (!registro || registro.length === 0) {
+      await bot.sendMessage(chatId, "⚠️ No se encontró tu registro. Usa /restaurar para vincular tu cuenta.");
+      return;
+    }
+
+    const id = registro[0].id;
+
+    // Validar duplicados solo para campos clave
+    const camposDuplicados = ["email", "documento", "celular", "usuario_telegram"];
+    if (camposDuplicados.includes(campo)) {
+      const { data: existe } = await supabase
+        .from(TABLE)
+        .select("id")
+        .or(`email.eq.${valor},documento.eq.${valor},celular.eq.${valor},usuario_telegram.eq.${valor}`);
+
+      if (existe && existe.length > 0 && existe[0].id !== id) {
+        await bot.sendMessage(chatId, "🚫 Ese valor ya está asociado a otro registro. No se puede actualizar.");
+        return;
+      }
+    }
+
+    // Ejecutar la actualización
+    const { error: errUpdate } = await supabase.from(TABLE).update({ [campo]: valor }).eq("id", id);
+
+    if (errUpdate) throw errUpdate;
+
+    await bot.sendMessage(chatId, `✅ *${campo}* actualizado correctamente a *${valor}*.`, { parse_mode: "Markdown" });
+  } catch (err) {
+    console.error("❌ Error en /actualizacion:", err);
+    await bot.sendMessage(chatId, "⚠️ Error al procesar la actualización. Intenta más tarde.");
   }
-
-  fs.unlinkSync(PENDIENTE_STATE);
 });
 
 // =============== [8] /restaurar (documento/email → elegir qué vincular → confirmar) ===============
