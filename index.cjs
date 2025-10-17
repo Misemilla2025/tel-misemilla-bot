@@ -322,65 +322,150 @@ bot.onText(/^\/misdatos/, async (msg) => {
   }
 });
 
-// ======================= COMANDO /ACTUALIZACION =======================
-bot.onText(/^\/actualizacion (.+)/, async (msg, match) => {
+// ======================= COMANDO /MISDATOS =======================
+bot.onText(/^\/misdatos\b/i, async (msg) => {
   const chatId = msg.chat.id;
-  const usuario = msg.from.username ? msg.from.username.toLowerCase() : msg.from.id.toString();
-  const entrada = match[1].trim();
 
-  // Detectar formato "campo valor"
-  const [campo, ...valorArray] = entrada.split(" ");
-  const valor = valorArray.join(" ").trim();
+  // Tomamos el @usuario si existe; si no, usamos el id numérico como fallback
+  const rawUser = msg.from.username ? msg.from.username.trim().toLowerCase() : "";
+  const userAt   = rawUser ? (rawUser.startsWith("@") ? rawUser : "@" + rawUser) : "";
+  const userBare = rawUser.startsWith("@") ? rawUser.slice(1) : rawUser;
 
-  if (!campo || !valor) {
-    await bot.sendMessage(chatId, "⚠️ Usa el formato correcto:\n`/actualizacion campo valor`\n\nEjemplo: `/actualizacion ciudad Bogotá`", {
-      parse_mode: "Markdown",
-    });
-    return;
-  }
-
-  await bot.sendMessage(chatId, `✏️ Actualizando *${campo}* a *${valor}*...`, { parse_mode: "Markdown" });
+  await bot.sendMessage(chatId, "🔎 Consultando tus datos, por favor espera...");
 
   try {
-    // Verificar existencia del usuario
-    const { data: registro, error: errBuscar } = await supabase
+    // 1) Buscar por usuario_telegram (todas las variantes razonables)
+    //    - exacto con @ (ej: @vencedor7)
+    //    - exacto sin @ (por si en DB quedó sin @)
+    //    - coincidencia tipo ilike (por seguridad)
+    let { data: registros, error } = await supabase
       .from(TABLE)
       .select("*")
-      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`);
+      .or(
+        [
+          userAt   ? `usuario_telegram.eq.${userAt}`   : null,
+          rawUser  ? `usuario_telegram.eq.${rawUser}`  : null,
+          userBare ? `usuario_telegram.eq.${userBare}` : null,
+          rawUser  ? `usuario_telegram.ilike.%${rawUser}%` : null,
+        ].filter(Boolean).join(",")
+      );
 
-    if (errBuscar) throw errBuscar;
-    if (!registro || registro.length === 0) {
-      await bot.sendMessage(chatId, "⚠️ No se encontró tu registro. Usa /restaurar para vincular tu cuenta.");
-      return;
+    if (error) throw error;
+
+    // Si no hubo resultados por usuario_telegram -> pedir celular y buscarlo
+    if (!registros || registros.length === 0) {
+      await bot.sendMessage(
+        chatId,
+        "⚠️ No encontré tu registro asociado a este Telegram.\n" +
+        "👉 *Envíame tu número de celular* (solo dígitos, sin +). Escribe *cancelar* para salir.",
+        { parse_mode: "Markdown" }
+      );
+
+      // Espera UNA respuesta del mismo chat para capturar el celular
+      bot.once("message", async (resp) => {
+        if (!resp || resp.chat.id !== chatId) return; // filtra otros chats
+
+        const txt = (resp.text || "").trim().toLowerCase();
+        if (txt === "cancelar") {
+          await bot.sendMessage(chatId, "🛑 Operación cancelada.");
+          return;
+        }
+
+        const cel = txt.replace(/\D/g, ""); // solo dígitos
+        if (!cel) {
+          await bot.sendMessage(chatId, "❗ Debes enviar solo números (sin espacios ni símbolos).");
+          return;
+        }
+
+        try {
+          const { data: regsPorCel, error: errCel } = await supabase
+            .from(TABLE)
+            .select("*")
+            .eq("celular", cel);
+
+          if (errCel) throw errCel;
+
+          if (!regsPorCel || regsPorCel.length === 0) {
+            await bot.sendMessage(
+              chatId,
+              "❌ No encontré registros con ese número de celular.\n" +
+              "Si no recuerdas tu cuenta, usa /restaurar."
+            );
+            return;
+          }
+
+          const r = regsPorCel[0];
+          const texto = formateaFichaUsuario(r);
+          await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
+        } catch (e2) {
+          console.error("❌ Error buscando por celular en /misdatos:", e2);
+          await bot.sendMessage(chatId, "⚠️ Error al consultar por celular. Intenta de nuevo.");
+        }
+      });
+
+      return; // salimos del handler principal
     }
 
-    const id = registro[0].id;
+    // Hubo coincidencias por usuario_telegram
+    const r = registros[0];
+    const texto = formateaFichaUsuario(r);
+    await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
 
-    // Validar duplicados solo para campos clave
-    const camposDuplicados = ["email", "documento", "celular", "usuario_telegram"];
-    if (camposDuplicados.includes(campo)) {
-      const { data: existe } = await supabase
-        .from(TABLE)
-        .select("id")
-        .or(`email.eq.${valor},documento.eq.${valor},celular.eq.${valor},usuario_telegram.eq.${valor}`);
-
-      if (existe && existe.length > 0 && existe[0].id !== id) {
-        await bot.sendMessage(chatId, "🚫 Ese valor ya está asociado a otro registro. No se puede actualizar.");
-        return;
-      }
-    }
-
-    // Ejecutar la actualización
-    const { error: errUpdate } = await supabase.from(TABLE).update({ [campo]: valor }).eq("id", id);
-
-    if (errUpdate) throw errUpdate;
-
-    await bot.sendMessage(chatId, `✅ *${campo}* actualizado correctamente a *${valor}*.`, { parse_mode: "Markdown" });
   } catch (err) {
-    console.error("❌ Error en /actualizacion:", err);
-    await bot.sendMessage(chatId, "⚠️ Error al procesar la actualización. Intenta más tarde.");
+    console.error("❌ Error en /misdatos:", err);
+    await bot.sendMessage(chatId, "⚠️ Error al consultar tus datos. Intenta de nuevo más tarde.");
   }
 });
+
+// ---------- Helper para formatear la ficha en el mismo estilo ----------
+function formateaFichaUsuario(r) {
+  let t = `📘 *TUS DATOS REGISTRADOS*\n\n`;
+
+  t += `╔💠 *DATOS PERSONALES:*\n`;
+  t += `• Nombre: ${r?.nombre_completo || "—"}\n`;
+  t += `• Documento: ${r?.documento || "—"}\n`;
+  t += `• Fecha Nac.: ${r?.fecha_nacimiento || "—"}\n`;
+  t += `• Edad: ${r?.edad || "—"}\n`;
+  t += `• Género: ${r?.genero || "—"}\n`;
+  t += `• Escolaridad: ${r?.escolaridad || "—"}\n\n`;
+
+  t += `╠📞 *CONTACTO:*\n`;
+  t += `• Celular: ${r?.celular || "—"}\n`;
+  t += `• Usuario Telegram: ${r?.usuario_telegram || "—"}\n\n`;
+
+  t += `╠📍 *UBICACIÓN:*\n`;
+  t += `• País: ${r?.pais || "—"}\n`;
+  t += `• Departamento: ${r?.departamento || "—"}\n`;
+  t += `• Ciudad: ${r?.ciudad || "—"}\n`;
+  t += `• Barrio: ${r?.barrio || "—"}\n`;
+  t += `• Dirección: ${r?.direccion || "—"}\n\n`;
+
+  t += `╠🏠 *HOGAR:*\n`;
+  t += `• Vivienda Propia: ${r?.vivienda_propia || "—"}\n`;
+  t += `• Zona: ${r?.zona || "—"}\n`;
+  t += `• Estrato: ${r?.estrato || "—"}\n`;
+  t += `• Personas en Hogar: ${r?.personas_en_hogar || "—"}\n`;
+  t += `• Personas que Trabajan: ${r?.personas_trabajan || "—"}\n`;
+  t += `• Adultos Mayores: ${r?.adultos_mayores || "—"}\n`;
+  t += `• Menores: ${r?.menores || "—"}\n\n`;
+
+  t += `╠🧩 *SERVICIOS:*\n`;
+  t += `• Servicios: ${r?.servicios || "—"}\n`;
+  t += `• Discapacidad: ${r?.discapacidad || "—"}\n`;
+  t += `• Detalle Discapacidad: ${r?.detalle_discapacidad || "—"}\n\n`;
+
+  t += `╠🧠 *INTERESES:*\n`;
+  t += `• Hobbies: ${r?.hobbies || "—"}\n`;
+  t += `• Emprendimiento: ${r?.emprendimiento || "—"}\n\n`;
+
+  t += `╚🤝 *REFERENCIAS:*\n`;
+  t += `• Nombre Ref.: ${r?.ref_nombre || "—"}\n`;
+  t += `• Telegram Ref.: ${r?.ref_telegram || "—"}\n`;
+  t += `• WhatsApp Ref.: ${r?.ref_whatsapp || "—"}\n\n`;
+
+  t += `📝 Usa /actualizacion para modificar algún dato.`;
+  return t;
+}
 
 // =============== [8] /restaurar (documento/email → elegir qué vincular → confirmar) ===============
 bot.onText(/^\/restaurar\b/i, async (msg) => {
