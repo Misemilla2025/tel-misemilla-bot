@@ -374,62 +374,109 @@ function formateaFichaBonita(r) {
 }
 
 // ======================= COMANDO /ACTUALIZACION =======================
-bot.onText(/^\/actualizacion (.+)/, async (msg, match) => {
+bot.onText(/^\/actualizacion(?:\s+(.+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
-  const usuario = msg.from.username ? msg.from.username.toLowerCase() : msg.from.id.toString();
-  const entrada = match[1].trim();
+  const usuario = msg.from.username
+    ? msg.from.username.toLowerCase()
+    : msg.from.id.toString();
 
-  // Detectar formato "campo valor"
+  const entrada = match[1] ? match[1].trim() : "";
+
+  // Si no envió nada, mostrar ayuda
+  if (!entrada) {
+    await bot.sendMessage(
+      chatId,
+      "📝 *ACTUALIZACIÓN DE DATOS*\n\n" +
+        "Usa el formato:\n`/actualizacion campo valor`\n\n" +
+        "📘 *Ejemplo:*\n`/actualizacion ciudad Bogotá`\n\n" +
+        "🧩 Puedes actualizar cualquier campo *excepto* los siguientes:\n" +
+        "• email\n• documento\n• celular\n• usuario_telegram\n\n" +
+        "❌ Si intentas cambiar uno de esos y ya está en uso, será rechazado.",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
   const [campo, ...valorArray] = entrada.split(" ");
   const valor = valorArray.join(" ").trim();
 
   if (!campo || !valor) {
-    await bot.sendMessage(chatId, "⚠️ Usa el formato correcto:\n`/actualizacion campo valor`\n\nEjemplo: `/actualizacion ciudad Bogotá`", {
-      parse_mode: "Markdown",
-    });
+    await bot.sendMessage(
+      chatId,
+      "⚠️ Formato incorrecto.\n\nUsa `/actualizacion campo valor`\nEjemplo: `/actualizacion ciudad Bogotá`",
+      { parse_mode: "Markdown" }
+    );
     return;
   }
 
-  await bot.sendMessage(chatId, `✏️ Actualizando *${campo}* a *${valor}*...`, { parse_mode: "Markdown" });
+  await bot.sendMessage(
+    chatId,
+    `✏️ Actualizando *${campo}* a *${valor}*...`,
+    { parse_mode: "Markdown" }
+  );
 
   try {
-    // Verificar existencia del usuario
-    const { data: registro, error: errBuscar } = await supabase
+    // Buscar usuario en la tabla
+    const { data: registros, error: errBuscar } = await supabase
       .from(TABLE)
       .select("*")
-      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`);
+      .or(
+        `usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`
+      );
 
     if (errBuscar) throw errBuscar;
-    if (!registro || registro.length === 0) {
-      await bot.sendMessage(chatId, "⚠️ No se encontró tu registro. Usa /restaurar para vincular tu cuenta.");
+
+    if (!registros || registros.length === 0) {
+      await bot.sendMessage(
+        chatId,
+        "⚠️ No encontré tu registro asociado a este Telegram.\nUsa /restaurar para vincular tu cuenta."
+      );
       return;
     }
 
-    const id = registro[0].id;
+    const registro = registros[0];
+    const id = registro.id;
 
-    // Validar duplicados solo para campos clave
-    const camposDuplicados = ["email", "documento", "celular", "usuario_telegram"];
-    if (camposDuplicados.includes(campo)) {
-      const { data: existe } = await supabase
+    // Campos protegidos (no se pueden duplicar)
+    const protegidos = ["email", "documento", "celular", "usuario_telegram"];
+
+    if (protegidos.includes(campo)) {
+      const { data: existe, error: errDup } = await supabase
         .from(TABLE)
         .select("id")
-        .or(`email.eq.${valor},documento.eq.${valor},celular.eq.${valor},usuario_telegram.eq.${valor}`);
+        .eq(campo, valor);
+
+      if (errDup) throw errDup;
 
       if (existe && existe.length > 0 && existe[0].id !== id) {
-        await bot.sendMessage(chatId, "🚫 Ese valor ya está asociado a otro registro. No se puede actualizar.");
+        await bot.sendMessage(
+          chatId,
+          `🚫 Ese *${campo}* ya está registrado por otra persona. No se puede actualizar.`,
+          { parse_mode: "Markdown" }
+        );
         return;
       }
     }
 
-    // Ejecutar la actualización
-    const { error: errUpdate } = await supabase.from(TABLE).update({ [campo]: valor }).eq("id", id);
+    // Ejecutar actualización
+    const { error: errUpdate } = await supabase
+      .from(TABLE)
+      .update({ [campo]: valor })
+      .eq("id", id);
 
     if (errUpdate) throw errUpdate;
 
-    await bot.sendMessage(chatId, `✅ *${campo}* actualizado correctamente a *${valor}*.`, { parse_mode: "Markdown" });
+    await bot.sendMessage(
+      chatId,
+      `✅ *${campo}* actualizado correctamente a *${valor}*.`,
+      { parse_mode: "Markdown" }
+    );
   } catch (err) {
     console.error("❌ Error en /actualizacion:", err);
-    await bot.sendMessage(chatId, "⚠️ Error al procesar la actualización. Intenta más tarde.");
+    await bot.sendMessage(
+      chatId,
+      "⚠️ Ocurrió un error al procesar la actualización. Intenta más tarde."
+    );
   }
 });
 
