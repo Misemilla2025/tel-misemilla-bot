@@ -251,7 +251,7 @@ bot.onText(/\/glosario/i, async (msg) => {
 bot.onText(/^\/misdatos$/, async (msg) => {
   const chatId = msg.chat.id;
 
-  // ✅ incluye '@' si el usuario tiene username
+  // ✅ Detectar usuario de Telegram o usar su ID si no tiene username
   const usuario = msg.from.username
     ? '@' + msg.from.username.toLowerCase()
     : msg.from.id.toString();
@@ -259,14 +259,31 @@ bot.onText(/^\/misdatos$/, async (msg) => {
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // ✅ Busca por Telegram, celular, email o documento (con comillas)
-    const { data: registros, error } = await supabase
+    let registros = [];
+    let error = null;
+
+    // 🔹 1️⃣ Buscar por usuario_telegram
+    let res = await supabase
       .from(TABLE)
       .select("*")
-      .or(`usuario_telegram.eq.'${usuario}',celular.eq.'${usuario}',email.eq.'${usuario}',documento.eq.'${usuario}'`);
+      .eq("usuario_telegram", usuario);
+
+    registros = res.data;
+    error = res.error;
+
+    // 🔹 2️⃣ Si no encuentra, intenta buscar por celular
+    if ((!registros || registros.length === 0) && !error) {
+      res = await supabase
+        .from(TABLE)
+        .select("*")
+        .eq("celular", usuario);
+      registros = res.data;
+      error = res.error;
+    }
 
     if (error) throw error;
 
+    // ⚠️ Si no hay registro
     if (!registros || registros.length === 0) {
       await bot.sendMessage(
         chatId,
@@ -275,6 +292,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
       return;
     }
 
+    // ⚠️ Si hay duplicados
     if (registros.length > 1) {
       await bot.sendMessage(
         chatId,
@@ -283,10 +301,12 @@ bot.onText(/^\/misdatos$/, async (msg) => {
       return;
     }
 
+    // ✅ Mostrar los datos formateados
     const r = registros[0];
-    let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
+    let texto =
+      "📋 *TUS DATOS REGISTRADOS*\n\n" +
+      "🧾 *Consulta actualizada exitosamente*\n\n";
 
-    // ✅ Formatea los campos en mayúsculas
     for (const [campo, valor] of Object.entries(r)) {
       if (valor !== null && campo !== "id") {
         const valorMostrar =
@@ -298,6 +318,8 @@ bot.onText(/^\/misdatos$/, async (msg) => {
         texto += `• *${nombreCampo}:* ${valorMostrar}\n`;
       }
     }
+
+    texto += "\n✅ Verifica que tus datos estén correctos. Usa `/actualizacion campo valor` si deseas cambiar alguno.";
 
     await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
   } catch (err) {
