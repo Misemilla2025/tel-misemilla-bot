@@ -252,11 +252,9 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
   const arg = (match[1] || "").trim();
 
-  // Normalizador de número (quita símbolos, + y prefijo 57)
   const normalizarNumero = (num = "") =>
     num.replace(/\D/g, "").replace(/^57/, "").trim();
 
-  // Usuario Telegram si tiene
   const tgUsername = msg.from.username
     ? "@" + msg.from.username.toLowerCase().trim()
     : null;
@@ -272,31 +270,25 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
         .from(TABLE)
         .select("*")
         .eq("usuario_telegram", tgUsername);
-
       if (error) throw error;
-      if (data && data.length > 0) registro = data[0];
+      if (data?.length > 0) registro = data[0];
     }
 
-    // 2️⃣ Si no encontró por usuario o no tiene @usuario, buscar por número
+    // 2️⃣ Buscar por número (coincidencias flexibles)
     if (!registro) {
-      // Tomar número del argumento o del username (por si el username es numérico)
-      const numero = normalizarNumero(arg || msg.from.username || "");
-
+      const numero = normalizarNumero(arg);
       if (numero) {
         const { data, error } = await supabase.from(TABLE).select("*");
         if (error) throw error;
 
         registro = data.find((r) => {
           if (!r.usuario_telegram) return false;
-
           const guardado = normalizarNumero(r.usuario_telegram);
-          const comparar = [
-            guardado,          // sin prefijo
-            "57" + guardado,   // con 57
-            "+57" + guardado,  // con +57
-          ];
-
-          return comparar.includes(numero);
+          return (
+            guardado === numero ||
+            "57" + guardado === numero ||
+            "+57" + guardado === numero
+          );
         });
       }
     }
@@ -311,8 +303,8 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
       return;
     }
 
-    // 4️⃣ Mostrar datos con pausa breve
-    await new Promise((res) => setTimeout(res, 800));
+    // 4️⃣ Mostrar ficha
+    await new Promise((res) => setTimeout(res, 700));
     await enviarFichaDatos(chatId, registro);
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
@@ -322,7 +314,6 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
     );
   }
 });
-
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
@@ -394,21 +385,45 @@ bot.onText(/^\/actualizacion(?:\s+(.+))?$/, async (msg, match) => {
 
   try {
     const partes = args.split(" ");
-    const campo = partes.shift()?.trim();
+    const campo = partes.shift()?.trim().toLowerCase();
     const valorOriginal = partes.join(" ").trim();
 
     if (!campo || !valorOriginal) {
-      await bot.sendMessage(chatId, "⚠️ Formato inválido. Usa `/actualizacion campo valor`.", { parse_mode: "Markdown" });
+      await bot.sendMessage(
+        chatId,
+        "⚠️ Formato inválido. Usa `/actualizacion campo valor`.",
+        { parse_mode: "Markdown" }
+      );
       return;
     }
 
-    // Normaliza valor: MAYÚSCULAS excepto ciertos campos
+    // 🚫 Campos sensibles que no se pueden modificar
+    const camposRestringidos = [
+      "email",
+      "documento",
+      "celular",
+      "usuario_telegram",
+      "ref_telegram",
+      "ref_whatsapp"
+    ];
+
+    if (camposRestringidos.includes(campo)) {
+      await bot.sendMessage(
+        chatId,
+        `🚫 El campo *${campo}* no puede modificarse directamente por motivos de seguridad.\n` +
+          "Si necesitas cambiarlo, usa /restaurar o comunícate con soporte.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    // 🔠 Normaliza valor: MAYÚSCULAS excepto si es correo o similar
     const noMayus = ["email", "usuario_telegram", "ref_telegram"];
-    const valor = noMayus.includes(campo.toLowerCase())
+    const valor = noMayus.includes(campo)
       ? valorOriginal.trim()
       : valorOriginal.toUpperCase().trim();
 
-    // Busca registro por usuario Telegram
+    // 🔎 Buscar por usuario Telegram
     const tgUsername = msg.from.username
       ? "@" + msg.from.username.toLowerCase().trim()
       : null;
@@ -420,13 +435,16 @@ bot.onText(/^\/actualizacion(?:\s+(.+))?$/, async (msg, match) => {
 
     if (error) throw error;
     if (!data || data.length === 0) {
-      await bot.sendMessage(chatId, "⚠️ No se encontró tu registro. Verifica tu usuario o usa /restaurar.");
+      await bot.sendMessage(
+        chatId,
+        "⚠️ No se encontró tu registro. Verifica tu usuario o usa /restaurar."
+      );
       return;
     }
 
     const registro = data[0];
 
-    // Actualiza valor
+    // 🧩 Actualiza valor
     const payload = {};
     payload[campo] = valor;
     payload["ultima_actualizacion"] = new Date().toISOString();
@@ -439,10 +457,17 @@ bot.onText(/^\/actualizacion(?:\s+(.+))?$/, async (msg, match) => {
 
     if (e) throw e;
 
-    await bot.sendMessage(chatId, `✅ Tu dato *${campo}* ha sido actualizado correctamente.`, { parse_mode: "Markdown" });
+    await bot.sendMessage(
+      chatId,
+      `✅ Tu dato *${campo.toUpperCase()}* ha sido actualizado correctamente.`,
+      { parse_mode: "Markdown" }
+    );
   } catch (err) {
     console.error("❌ Error en /actualizacion:", err);
-    await bot.sendMessage(chatId, "❌ Hubo un error al actualizar tus datos. Intenta más tarde.");
+    await bot.sendMessage(
+      chatId,
+      "❌ Hubo un error al actualizar tus datos. Intenta más tarde."
+    );
   }
 });
 
