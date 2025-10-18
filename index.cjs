@@ -252,9 +252,11 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
   const arg = (match[1] || "").trim();
 
-  // 🧹 Normalizar número: quitar símbolos, +, y prefijo 57
-  const normalizarNumero = (num = "") =>
-    num.replace(/\D/g, "").replace(/^57/, "").trim();
+  // 🧹 Normalizar número: eliminar todo excepto dígitos y dejar los últimos 10
+  const normalizarNumero = (num = "") => {
+    const limpio = num.replace(/\D/g, "");
+    return limpio.length > 10 ? limpio.slice(-10) : limpio; // últimos 10 dígitos
+  };
 
   // 👤 Usuario Telegram si existe
   const tgUsername = msg.from.username
@@ -279,30 +281,22 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
 
     // 2️⃣ Buscar por número si no encontró usuario
     if (!registro) {
-      const numeroConsulta = arg ? arg : msg.from.id.toString();
+      const numeroConsulta = arg || msg.from.id.toString();
       const numero = normalizarNumero(numeroConsulta);
 
-      const { data, error } = await supabase
-        .from(TABLE)
-        .select("*");
-
+      const { data, error } = await supabase.from(TABLE).select("*");
       if (error) throw error;
 
       registro = data.find((r) => {
         if (!r.usuario_telegram) return false;
 
+        // Normaliza lo guardado también
         const guardado = normalizarNumero(r.usuario_telegram);
-        const comparar = [
-          guardado,          // sin prefijo
-          "57" + guardado,   // con 57
-          "+57" + guardado,  // con +57
-        ];
-
-        return comparar.includes(numero);
+        return guardado && guardado === numero;
       });
     }
 
-    // 3️⃣ Si no se encontró nada → mensaje corto y directo
+    // 3️⃣ Si no se encontró nada
     if (!registro) {
       await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
       return;
