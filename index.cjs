@@ -359,7 +359,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
     // ✅ Caso 1: Usuario Telegram encontrado
     if (registros && registros.length > 0) {
       const registro = registros[0];
-      await new Promise(res => setTimeout(res, 800)); // ⏱️ Pausa
+      await new Promise(res => setTimeout(res, 800));
       await enviarFichaDatos(chatId, registro);
       return;
     }
@@ -398,26 +398,17 @@ bot.onText(/^\/misdatos$/, async (msg) => {
       }
 
       const registro = coincidencia[0];
-
-      // Normaliza usuario_telegram guardado y actual
       const vinculo = (registro.usuario_telegram || "").toLowerCase().replace(/^@/, "").trim();
       const actual = (username || "").toLowerCase().replace(/^@/, "").trim();
 
-      // ✅ Caso 2A: El número existe pero no tiene usuario Telegram
-      if (!vinculo) {
+      // ✅ Si el número pertenece a la misma persona (sin usuario o coincide)
+      if (!vinculo || vinculo === actual) {
         await new Promise(res => setTimeout(res, 800));
         await enviarFichaDatos(chatId, registro);
         return;
       }
 
-      // ✅ Caso 2B: El número tiene el mismo usuario Telegram
-      if (vinculo === actual) {
-        await new Promise(res => setTimeout(res, 800));
-        await enviarFichaDatos(chatId, registro);
-        return;
-      }
-
-      // 🚫 Caso 3: El número pertenece a otro usuario Telegram
+      // 🚫 Si pertenece a otro usuario, lo bloquea
       await bot.sendMessage(
         chatId,
         "🚫 Este número ya está vinculado a otro usuario de Telegram. No se puede consultar desde aquí."
@@ -431,7 +422,6 @@ bot.onText(/^\/misdatos$/, async (msg) => {
     );
   }
 });
-
 
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r) {
@@ -618,13 +608,18 @@ bot.on("message", async (msg) => {
   const txt = (msg.text || "").trim();
   if (!txt) return;
 
-  // Si hay procesos guiados activos, no disparamos respuestas automáticas
-  const hayFlujo = fs.existsSync(PENDIENTE_STATE) || fs.existsSync(RESTAURAR_STATE) || fs.existsSync(MISDATOS_STATE);
-  if (hayFlujo && !txt.startsWith("/")) return;
-  if (txt.startsWith("/")) return; // comandos ya tienen sus handlers
+  // ✅ Ignorar si hay procesos activos o si está esperando celular en /misdatos
+  const hayFlujo =
+    fs.existsSync(PENDIENTE_STATE) ||
+    fs.existsSync(RESTAURAR_STATE) ||
+    fs.existsSync(MISDATOS_STATE);
+
+  // Si hay flujo activo o si el texto es respuesta a un comando, no responder
+  if (hayFlujo || txt.startsWith("/")) return;
 
   const lower = txt.toLowerCase();
 
+  // 👇 Todas las respuestas automáticas normales
   if (/^(hola|buenas|saludos|buen día|buenas tardes|buenas noches)\b/.test(lower)) {
     await send(c, "👋 ¡Hola! Usa /ayuda para ver lo que puedo hacer.");
     return;
@@ -663,7 +658,6 @@ bot.on("message", async (msg) => {
 "• `/glosario` para ver los campos\n" +
 "• `/restaurar` si perdiste acceso");
 });
-
 // =============== [10] Confirmación de arranque ===============
 bot.getMe()
   .then(info => console.log(`✅ Bot conectado como: @${info.username}`))
