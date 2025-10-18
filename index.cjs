@@ -652,33 +652,93 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = (msg.text || "").trim().toLowerCase();
 
-  // Ignorar comandos
+  // Ignorar comandos y respuestas de confirmación
   if (text.startsWith("/")) return;
+  if (["sí", "si", "no", "s"].includes(text)) return;
 
-  // Ejemplos de respuestas automáticas
-  if (text.includes("hola")) {
+  // ====== SALUDOS ======
+  if (text.includes("hola") || text.includes("buenas") || text.includes("saludos")) {
     await bot.sendMessage(
       chatId,
-      "🤖 Hola 👋\n¿Deseas consultar o actualizar tu información?\n\n" +
-        "• /misdatos para ver tu registro\n" +
-        "• /actualizacion para cambiar un dato\n" +
-        "• /glosario para ver los campos\n" +
-        "• /restaurar si perdiste acceso"
+      "🤖 ¡Hola! 👋\nBienvenido(a) al asistente de *Mi Semilla* 🌱\n\n" +
+      "¿Qué deseas hacer hoy?\n\n" +
+      "• /misdatos → Ver tu información\n" +
+      "• /actualizacion → Modificar un dato\n" +
+      "• /glosario → Ver los campos disponibles\n" +
+      "• /restaurar → Recuperar tu cuenta"
     );
-  } else if (text.includes("gracias")) {
-    await bot.sendMessage(chatId, "😊 ¡Con gusto! Me alegra poder ayudarte.");
-  } else if (text.includes("ayuda")) {
-    await bot.sendMessage(
-      chatId,
-      "🧭 Puedo ayudarte con estos comandos:\n" +
-        "• /misdatos → Ver tu información\n" +
-        "• /actualizacion → Modificar un dato\n" +
-        "• /glosario → Ver los campos disponibles\n" +
-        "• /restaurar → Recuperar tu cuenta"
-    );
+    return;
   }
-});
 
+  // ====== PALABRAS CLAVE DE AYUDA ======
+  if (
+    text.includes("ayuda") ||
+    text.includes("orienta") ||
+    text.includes("cómo empiezo") ||
+    text.includes("qué debo hacer") ||
+    text.includes("necesito actualizar") ||
+    text.includes("consultar") ||
+    text.includes("información") ||
+    text.includes("actualizar")
+  ) {
+    await bot.sendMessage(
+      chatId,
+      "🧭 Puedo ayudarte con estos comandos:\n\n" +
+      "• /misdatos → Ver tu información actual registrada.\n" +
+      "• /actualizacion → Modificar un dato específico.\n" +
+      "• /glosario → Ver los nombres de los campos disponibles.\n" +
+      "• /restaurar → Recuperar tu cuenta si cambiaste usuario o celular.\n\n" +
+      "✉️ Escribe por ejemplo:\n`/actualizacion ciudad Bogotá` o `/misdatos`"
+    );
+    return;
+  }
+
+  // ====== AGRADECIMIENTOS ======
+  if (text.includes("gracias") || text.includes("te agradezco") || text.includes("muy amable")) {
+    await bot.sendMessage(chatId, "😊 ¡Con gusto! Siempre estoy aquí para ayudarte 🌻");
+    return;
+  }
+
+  // ====== DESPEDIDAS ======
+  if (
+    text.includes("adiós") ||
+    text.includes("chao") ||
+    text.includes("nos vemos") ||
+    text.includes("hasta luego")
+  ) {
+    await bot.sendMessage(chatId, "👋 ¡Hasta pronto! Que tengas un excelente día 🌿");
+    return;
+  }
+
+  // ====== PALABRAS DE ERROR O CONFUSIÓN ======
+  if (
+    text.includes("no entiendo") ||
+    text.includes("no sé") ||
+    text.includes("error") ||
+    text.includes("ayúdame") ||
+    text.includes("problema")
+  ) {
+    await bot.sendMessage(
+      chatId,
+      "⚙️ Parece que necesitas un poco de ayuda.\n\n" +
+      "Prueba con alguno de estos comandos:\n" +
+      "• /misdatos → Consultar tu información.\n" +
+      "• /actualizacion → Modificar un dato.\n" +
+      "• /restaurar → Si perdiste acceso o cambiaste tu usuario."
+    );
+    return;
+  }
+
+  // ====== RESPUESTA POR DEFECTO ======
+  await bot.sendMessage(
+    chatId,
+    "🤔 No entendí tu mensaje, pero puedo ayudarte con:\n\n" +
+      "• /misdatos → Ver tus datos\n" +
+      "• /actualizacion → Modificar información\n" +
+      "• /glosario → Ver los campos disponibles\n" +
+      "• /restaurar → Recuperar tu cuenta"
+  );
+});
 // =============== [10] Confirmación de arranque ===============
 bot.getMe()
   .then(info => console.log(`✅ Bot conectado como: @${info.username}`))
