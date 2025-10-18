@@ -247,82 +247,62 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// =============== COMANDO /MISDATOS ===============
-bot.onText(/^\/misdatos$/, async (msg) => {
+// ================== COMANDO /MISDATOS ==================
+bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
+  const arg = (match[1] || "").trim();
 
-  // 🧩 Función para normalizar números (quita +, 57 y símbolos)
-  function normalizarNumero(num = "") {
-    return num
-      .toString()
-      .replace(/\+/g, "")
-      .replace(/^57/, "")
-      .replace(/\D/g, "")
-      .trim();
-  }
+  // Normalizador de número (quita símbolos, + y prefijo 57)
+  const normalizarNumero = (num = "") =>
+    num.replace(/\D/g, "").replace(/^57/, "").trim();
 
-  // Capturar username de Telegram si existe
+  // Usuario Telegram si tiene
   const tgUsername = msg.from.username
-    ? ("@" + msg.from.username.toLowerCase().trim())
+    ? "@" + msg.from.username.toLowerCase().trim()
     : null;
-
-  // Si no tiene username, usamos el ID numérico del chat como referencia
-  const userKey = tgUsername || msg.chat.id.toString();
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // ==================== CASO 1: USUARIO TELEGRAM ====================
-    if (tgUsername) {
-      const { data: registros, error } = await supabase
+    let registro = null;
+
+    // 1️⃣ Buscar por usuario Telegram
+    if (tgUsername && !arg) {
+      const { data, error } = await supabase
         .from(TABLE)
         .select("*")
         .eq("usuario_telegram", tgUsername);
 
       if (error) throw error;
-
-      if (registros && registros.length > 0) {
-        const registro = registros[0];
-        await new Promise((res) => setTimeout(res, 800));
-        await enviarFichaDatos(chatId, registro);
-        return;
-      }
+      if (data && data.length > 0) registro = data[0];
     }
 
-    // ==================== CASO 2: COINCIDENCIA FLEXIBLE POR NÚMERO ====================
-    // Buscar coincidencia flexible en campo usuario_telegram que pueda contener número con o sin prefijo
-    const { data: todos, error: errAll } = await supabase
-      .from(TABLE)
-      .select("*");
+    // 2️⃣ Buscar por número si fue escrito
+    if (!registro && arg) {
+      const numero = normalizarNumero(arg);
+      const { data, error } = await supabase.from(TABLE).select("*");
+      if (error) throw error;
 
-    if (errAll) throw errAll;
+      registro = data.find((r) => {
+        if (!r.usuario_telegram) return false;
+        const guardado = normalizarNumero(r.usuario_telegram);
+        return guardado === numero;
+      });
+    }
 
-    // Intentamos usar el número o ID del chat actual como referencia
-    const posiblesClaves = [
-      normalizarNumero(chatId),           // ID numérico del chat
-      normalizarNumero("+" + chatId),     // por si se guardó con +
-      normalizarNumero("57" + chatId),    // por si se guardó con 57
-    ];
-
-    const coincidencia = todos.find((r) => {
-      if (!r.usuario_telegram) return false;
-      const guardado = normalizarNumero(r.usuario_telegram);
-      return posiblesClaves.includes(guardado);
-    });
-
-    if (coincidencia) {
-      await new Promise((res) => setTimeout(res, 800));
-      await enviarFichaDatos(chatId, coincidencia);
+    // 3️⃣ No se encontró nada
+    if (!registro) {
+      await bot.sendMessage(
+        chatId,
+        "⚠️ No se encontró un registro asociado a este usuario o número.\n" +
+          "Si perdiste acceso a tu cuenta o cambiaste tu usuario, usa /restaurar."
+      );
       return;
     }
 
-    // ==================== CASO 3: SIN COINCIDENCIA ====================
-    await bot.sendMessage(
-      chatId,
-      "⚠️ No se encontró un registro asociado a este usuario o número.\n" +
-      "Si perdiste acceso a tu cuenta o cambiaste tu usuario, usa /restaurar."
-    );
-
+    // 4️⃣ Mostrar datos
+    await new Promise((res) => setTimeout(res, 800));
+    await enviarFichaDatos(chatId, registro);
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
     await bot.sendMessage(
@@ -331,6 +311,7 @@ bot.onText(/^\/misdatos$/, async (msg) => {
     );
   }
 });
+
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
@@ -383,6 +364,63 @@ async function enviarFichaDatos(chatId, r) {
 
   await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
 }
+
+// ================== COMANDO /ACTUALIZACION ==================
+bot.onText(/^\/actualizacion(?:\s+(.+))?$/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const args = (match[1] || "").trim();
+
+  if (!args) {
+    let texto = "🫱 Para actualizar un campo, escribe:\n";
+    texto += "`/actualizacion campo valor`\n\n";
+    texto += "📋 Ejemplos:\n";
+    texto += "`/actualizacion ciudad Bogotá`\n";
+    texto += "`/actualizacion nombre_completo Juan Pérez`\n";
+    texto += "\nUsa /glosario para ver la lista de campos disponibles.";
+    await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
+    return;
+  }
+
+  try {
+    const partes = args.split(" ");
+    const campo = partes.shift()?.trim().toLowerCase();
+    const valor = partes.join(" ").trim();
+
+    if (!campo || !valor) {
+      await bot.sendMessage(
+        chatId,
+        "⚠️ Debes indicar el campo y el nuevo valor.\nEjemplo: `/actualizacion ciudad Bogotá`",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .update({ [campo]: valor })
+      .eq("usuario_telegram", "@" + msg.from.username.toLowerCase())
+      .select();
+
+    if (error) throw error;
+    if (data && data.length > 0) {
+      await bot.sendMessage(
+        chatId,
+        "✅ Tu dato ha sido actualizado correctamente."
+      );
+    } else {
+      await bot.sendMessage(
+        chatId,
+        "⚠️ No se encontró tu registro. Verifica tu usuario o usa /restaurar."
+      );
+    }
+  } catch (err) {
+    console.error("❌ Error en /actualizacion:", err);
+    await bot.sendMessage(
+      chatId,
+      "❌ Hubo un error al actualizar tus datos. Intenta más tarde."
+    );
+  }
+});
 
 // =============== [8] /restaurar (documento/email → elegir qué vincular → confirmar) ===============
 bot.onText(/^\/restaurar\b/i, async (msg) => {
@@ -510,47 +548,34 @@ Ahora, *¿qué deseas vincular?*
   }
 });
 
-// ============= [9] Respuestas inteligentes (no invaden flujos activos) =============
+// ================== RESPUESTAS INTELIGENTES ==================
 bot.on("message", async (msg) => {
-  const c = msg.chat.id;
-  const txt = (msg.text || "").trim();
-  if (!txt) return;
+  const chatId = msg.chat.id;
+  const text = (msg.text || "").trim().toLowerCase();
 
-  // ✅ Ignorar si hay procesos activos o si el texto comienza con "/"
-  const hayFlujo =
-    fs.existsSync(PENDIENTE_STATE) ||
-    fs.existsSync(RESTAURAR_STATE) ||
-    fs.existsSync(MISDATOS_STATE);
+  // Ignorar comandos
+  if (text.startsWith("/")) return;
 
-  // Si hay flujo activo o es un comando, no responder
-  if (hayFlujo || txt.startsWith("/")) return;
-
-  const lower = txt.toLowerCase();
-
-  // 👋 Saludos automáticos (solo si no hay flujo activo)
-  if (/^(hola|buenas|saludos|buen día|buenas tardes|buenas noches)\b/.test(lower)) {
-    await send(c, "🤖 ¡Hola! Usa /ayuda para ver los comandos disponibles.");
-    return;
-  }
-
-  // 🧭 Peticiones de ayuda o soporte
-  if (/(ayuda|soporte|problema|no entiendo|quién me ayuda)/.test(lower)) {
-    await send(
-      c,
-      "*Centro de ayuda de Mi Semilla*\n\n" +
-      "📋 `/misdatos` → consulta tu registro\n" +
-      "📝 `/actualizacion` → modifica tus datos\n" +
-      "📘 `/glosario` → ver los campos disponibles\n" +
-      "♻️ `/restaurar` → vincular si perdiste acceso"
+  // Ejemplos de respuestas automáticas
+  if (text.includes("hola")) {
+    await bot.sendMessage(
+      chatId,
+      "🤖 Hola 👋\n¿Deseas consultar o actualizar tu información?\n\n" +
+        "• /misdatos para ver tu registro\n" +
+        "• /actualizacion para cambiar un dato\n" +
+        "• /glosario para ver los campos\n" +
+        "• /restaurar si perdiste acceso"
     );
-    return;
-  }
-
-  // 🔔 Respuesta por defecto cuando escribe algo fuera de contexto
-  if (!txt.startsWith("/")) {
-    await send(
-      c,
-      "🤖 No entendí tu mensaje. Escribe `/ayuda` para ver las opciones disponibles."
+  } else if (text.includes("gracias")) {
+    await bot.sendMessage(chatId, "😊 ¡Con gusto! Me alegra poder ayudarte.");
+  } else if (text.includes("ayuda")) {
+    await bot.sendMessage(
+      chatId,
+      "🧭 Puedo ayudarte con estos comandos:\n" +
+        "• /misdatos → Ver tu información\n" +
+        "• /actualizacion → Modificar un dato\n" +
+        "• /glosario → Ver los campos disponibles\n" +
+        "• /restaurar → Recuperar tu cuenta"
     );
   }
 });
