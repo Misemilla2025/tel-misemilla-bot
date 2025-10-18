@@ -247,71 +247,154 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// =============== [6] /misdatos: por @usuario o, si no hay, por celular ===============
-bot.onText(/^\/misdatos\b/i, async (msg) => {
-  const c = msg.chat.id;
-  const u = tUser(msg);
+// ======================= COMANDO /MISDATOS =======================
+bot.onText(/^\/misdatos$/, async (msg) => {
+  const chatId = msg.chat.id;
+  const username = msg.from.username
+    ? '@' + msg.from.username.toLowerCase()
+    : msg.from.id.toString();
 
-  // Si no tiene username → pedir celular sin '+'
-  if (!u) {
-    await send(c,
-"⚠️ No detecto tu *username* de Telegram.\n\n" +
-"Puedes *enviar ahora tu número celular registrado* (ejemplo: `3001234567`) y busco tu registro por celular.");
-    fs.writeFileSync(MISDATOS_STATE, JSON.stringify({ estado: "esperando_celular", chatId: c }));
-    return;
+  await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
+
+  try {
+    // Buscar por usuario Telegram
+    const { data: registros, error } = await supabase
+      .from(TABLE)
+      .select("*")
+      .eq("usuario_telegram", username);
+
+    if (error) throw error;
+
+    // ✅ Caso 1: Usuario Telegram encontrado
+    if (registros && registros.length > 0) {
+      const registro = registros[0];
+      await new Promise(res => setTimeout(res, 800)); // ⏱️ Pausa breve
+      await enviarFichaDatos(chatId, registro);
+      return;
+    }
+
+    // ⚠️ Caso 2: No tiene usuario Telegram → pedir celular
+    await bot.sendMessage(
+      chatId,
+      "📱 No encontré tu usuario en Telegram. Por favor, escribe tu número de celular exacto para verificar tu registro."
+    );
+
+    bot.once("message", async (resMsg) => {
+      const celular = resMsg.text.trim();
+
+      if (!/^\d{7,15}$/.test(celular)) {
+        await bot.sendMessage(
+          chatId,
+          "⚠️ El número no es válido. Intenta nuevamente sin espacios ni símbolos."
+        );
+        return;
+      }
+
+      // Buscar coincidencia por celular
+      const { data: coincidencia, error: errCel } = await supabase
+        .from(TABLE)
+        .select("*")
+        .eq("celular", celular);
+
+      if (errCel) throw errCel;
+
+      // ⚠️ Si no existe el celular
+      if (!coincidencia || coincidencia.length === 0) {
+        await bot.sendMessage(
+          chatId,
+          "⚠️ No encontré tu registro asociado a ese número. Usa /restaurar para vincular tu cuenta."
+        );
+        return;
+      }
+
+      const registro = coincidencia[0];
+      const vinculo = registro.usuario_telegram
+        ? registro.usuario_telegram.trim().toLowerCase()
+        : "";
+      const actual = username.trim().toLowerCase();
+
+      // ✅ Caso 2A: El número existe pero no tiene usuario Telegram
+      if (!vinculo) {
+        await new Promise(res => setTimeout(res, 800));
+        await enviarFichaDatos(chatId, registro);
+        return;
+      }
+
+      // ✅ Caso 2B: El número tiene el mismo usuario Telegram
+      if (vinculo === actual) {
+        await new Promise(res => setTimeout(res, 800));
+        await enviarFichaDatos(chatId, registro);
+        return;
+      }
+
+      // 🚫 Caso 3: El número pertenece a otro usuario Telegram
+      await bot.sendMessage(
+        chatId,
+        "🚫 Este número ya está vinculado a otro usuario de Telegram. No se puede consultar desde aquí."
+      );
+    });
+  } catch (err) {
+    console.error("❌ Error en /misdatos:", err);
+    await bot.sendMessage(
+      chatId,
+      "❌ Error al consultar tus datos. Intenta más tarde."
+    );
   }
-
-  const ut = normUserForDB(u); // @usuario
-  let { data, error } = await supabase
-    .from(TABLE)
-    .select("*")
-    .or(`usuario_telegram.eq.${ut},usuario_telegram.ilike.%${u}%`)
-    .maybeSingle();
-
-  if (error) { console.error(error); await send(c,"❌ Error al consultar tus datos."); return; }
-
-  if (!data) {
-    await send(c,
-"⚠️ No encontré datos asociados a tu *usuario de Telegram*.\n\n" +
-"Puedes *enviar ahora tu número celular registrado* (ejemplo: `3001234567`) y busco tu registro por celular.");
-    fs.writeFileSync(MISDATOS_STATE, JSON.stringify({ estado: "esperando_celular", chatId: c }));
-    return;
-  }
-
-  const d = data;
-  let out = `📄 *Tus datos registrados:*\n\n`;
-  for (const f of fieldList()) out += `• ${f}: ${d[f] || "Sin registrar"}\n`;
-  out += `\n📅 *Actualizado el* ${fechaCorta()}`;
-  await send(c, out);
 });
 
-// Respuesta con celular cuando quedó en espera por /misdatos
-bot.on("message", async (msg) => {
-  const c   = msg.chat.id;
-  const txt = (msg.text || "").trim();
 
-  if (!fs.existsSync(MISDATOS_STATE)) return;
-  let st = JSON.parse(fs.readFileSync(MISDATOS_STATE, "utf8"));
-  if (st.chatId !== c || st.estado !== "esperando_celular") return;
+// ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
+async function enviarFichaDatos(chatId, r) {
+  let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
 
-  // Buscar por celular exacto o ilike (sin '+')
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select("*")
-    .or(`celular.eq.${txt},celular.ilike.%${txt}%`)
-    .maybeSingle();
+  texto += "╔💠 *DATOS PERSONALES:*\n";
+  texto += `• Nombre: ${r.nombre_completo?.toUpperCase() || "—"}\n`;
+  texto += `• Documento: ${r.documento?.toUpperCase() || "—"}\n`;
+  texto += `• Fecha Nac.: ${r.fecha_nacimiento || "—"}\n`;
+  texto += `• Edad: ${r.edad || "—"}\n`;
+  texto += `• Género: ${r.genero?.toUpperCase() || "—"}\n`;
+  texto += `• Escolaridad: ${r.escolaridad?.toUpperCase() || "—"}\n\n`;
 
-  fs.unlinkSync(MISDATOS_STATE);
+  texto += "╠📞 *CONTACTO:*\n";
+  texto += `• Celular: ${r.celular || "—"}\n`;
+  texto += `• Usuario Telegram: ${r.usuario_telegram || "—"}\n`;
+  texto += `• Email: ${r.email || "—"}\n\n`;
 
-  if (error) { console.error(error); await send(c,"❌ Error al consultar por celular."); return; }
-  if (!data) { await send(c,"❌ No se encontró ningún registro con ese *número celular*."); return; }
+  texto += "╠📍 *UBICACIÓN:*\n";
+  texto += `• País: ${r.pais?.toUpperCase() || "—"}\n`;
+  texto += `• Departamento: ${r.departamento?.toUpperCase() || "—"}\n`;
+  texto += `• Ciudad: ${r.ciudad?.toUpperCase() || "—"}\n`;
+  texto += `• Barrio: ${r.barrio?.toUpperCase() || "—"}\n`;
+  texto += `• Dirección: ${r.direccion?.toUpperCase() || "—"}\n\n`;
 
-  const d = data;
-  let out = `📄 *Tus datos registrados:*\n\n`;
-  for (const f of fieldList()) out += `• ${f}: ${d[f] || "Sin registrar"}\n`;
-  out += `\n📅 *Actualizado el* ${fechaCorta()}`;
-  await send(c, out);
-});
+  texto += "╠🏠 *HOGAR:*\n";
+  texto += `• Vivienda Propia: ${r.vivienda_propia?.toUpperCase() || "—"}\n`;
+  texto += `• Zona: ${r.zona?.toUpperCase() || "—"}\n`;
+  texto += `• Estrato: ${r.estrato || "—"}\n`;
+  texto += `• Personas en Hogar: ${r.personas_en_hogar || "—"}\n`;
+  texto += `• Personas que Trabajan: ${r.personas_trabajan || "—"}\n`;
+  texto += `• Adultos Mayores: ${r.adultos_mayores || "—"}\n`;
+  texto += `• Menores: ${r.menores || "—"}\n\n`;
+
+  texto += "╠🧩 *SERVICIOS:*\n";
+  texto += `• Servicios: ${r.servicios?.toUpperCase() || "—"}\n`;
+  texto += `• Discapacidad: ${r.discapacidad?.toUpperCase() || "—"}\n`;
+  texto += `• Detalle Discapacidad: ${r.detalle_discapacidad?.toUpperCase() || "—"}\n\n`;
+
+  texto += "╠🧠 *INTERESES:*\n";
+  texto += `• Hobbies: ${r.hobbies?.toUpperCase() || "—"}\n`;
+  texto += `• Emprendimiento: ${r.emprendimiento?.toUpperCase() || "—"}\n\n`;
+
+  texto += "╚🤝 *REFERENCIAS:*\n";
+  texto += `• Nombre Ref.: ${r.ref_nombre?.toUpperCase() || "—"}\n`;
+  texto += `• Telegram Ref.: ${r.ref_telegram || "—"}\n`;
+  texto += `• WhatsApp Ref.: ${r.ref_whatsapp || "—"}\n\n`;
+
+  texto += "📝 *Para actualizar tus datos usa:* `/actualizacion campo valor`\n";
+  texto += "📘 *Para conocer los nombres de los campos usa:* `/glosario`";
+
+  await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
+}
 
 // ======================= COMANDO /ACTUALIZACION =======================
 bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
