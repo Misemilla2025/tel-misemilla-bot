@@ -367,96 +367,106 @@ async function enviarFichaDatos(chatId, r) {
   await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
 }
 
-// ======================= COMANDO /ACTUALIZACION =======================
-bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const texto = match[1]?.trim();
-
-  if (!texto) {
-    await bot.sendMessage(
-      chatId,
-      "🧩 *Guía de actualización de datos*\n\n" +
-      "Usa el formato:\n`/actualizacion campo valor`\n" +
-      "Ejemplo:\n`/actualizacion ciudad Bogotá`\n\n" +
-      "Si no recuerdas los campos disponibles, usa 👉 /glosario 📘",
-      { parse_mode: "Markdown" }
-    );
-    return;
-  }
-
-  const partes = texto.split(" ");
-  const campo = partes.shift()?.trim();
-  const valor = partes.join(" ").trim();
-
-  const usuario = msg.from.username
-    ? '@' + msg.from.username.toLowerCase()
-    : msg.from.id.toString();
-
-  try {
-    const { data: registros, error: errBuscar } = await supabase
-      .from(TABLE)
-      .select("*")
-      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`);
-
-    if (errBuscar) throw errBuscar;
-
-    if (!registros || registros.length === 0) {
-      await bot.sendMessage(chatId, "⚠️ No encontré tu registro asociado a este Telegram. Usa /restaurar.");
-      return;
-    }
-
-    if (registros.length > 1) {
-      await bot.sendMessage(chatId, "⚠️ Se encontraron duplicados. Contacta al administrador para resolverlo.");
-      return;
-    }
-
-    const id = registros[0].id;
-    const camposProtegidos = ["email", "documento", "celular", "usuario_telegram"];
-
-    // ✅ Verificar si el nuevo valor es igual al actual
-    if (registros[0][campo] && registros[0][campo].toString().toLowerCase() === valor.toLowerCase()) {
-      await bot.sendMessage(chatId, `⚠️ No se realizaron cambios. El valor ingresado ya está registrado en ${campo}.`);
-      return;
-    }
-
-    // 🚫 Evitar duplicación de campos críticos
-    if (camposProtegidos.includes(campo)) {
-      const { data: existe, error: errDup } = await supabase
-        .from(TABLE)
-        .select("id")
-        .eq(campo, valor);
-
-      if (errDup) throw errDup;
-      if (existe && existe.length > 0 && existe[0].id !== id) {
-        await bot.sendMessage(chatId, `🚫 Ese ${campo} ya está en uso. No se puede actualizar.`);
-        return;
-      }
-    }
-
-    // 🧩 Convertir a mayúsculas excepto email y usuario_telegram
-    const camposMinuscula = ["email", "usuario_telegram"];
-    const valorFinal = camposMinuscula.includes(campo) ? valor : valor.toUpperCase();
-
-    // ✅ Actualizar el valor del campo
-    const { error: errUpdate } = await supabase
-      .from(TABLE)
-      .update({ [campo]: valorFinal })
-      .eq("id", id);
-
-    if (errUpdate) throw errUpdate;
-
-    await bot.sendMessage(
-      chatId,
-      `✅ *${campo}* actualizado correctamente a *${valorFinal}*.`,
-      { parse_mode: "Markdown" }
-    );
-
-  } catch (err) {
-    console.error("❌ Error en /actualizacion:", err);
-    await bot.sendMessage(chatId, "❌ Error al procesar tu actualización. Intenta más tarde.");
-  }
+// ======================= COMANDO /ACTUALIZACION =======================  
+bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {  
+  const chatId = msg.chat.id;  
+  const texto = match[1]?.trim();  
+  
+  if (!texto) {  
+    await bot.sendMessage(  
+      chatId,  
+      "🧩 *Guía de actualización de datos*\n\n" +  
+      "Usa el formato:\n`/actualizacion campo valor`\n" +  
+      "Ejemplo:\n`/actualizacion ciudad Bogotá`\n\n" +  
+      "Si no recuerdas los campos disponibles, usa 👉 /glosario 📘",  
+      { parse_mode: "Markdown" }  
+    );  
+    return;  
+  }  
+  
+  const partes = texto.split(" ");  
+  const campo = partes.shift()?.trim();  
+  const valor = partes.join(" ").trim();  
+  
+  const usuario = msg.from.username  
+    ? '@' + msg.from.username.toLowerCase()  
+    : msg.from.id.toString();  
+  
+  try {  
+    const { data: registros, error: errBuscar } = await supabase  
+      .from(TABLE)  
+      .select("*")  
+      .or(`usuario_telegram.eq.${usuario},celular.eq.${usuario},email.eq.${usuario},documento.eq.${usuario}`);  
+  
+    if (errBuscar) throw errBuscar;  
+  
+    if (!registros || registros.length === 0) {  
+      await bot.sendMessage(chatId, "⚠️ No encontré tu registro asociado a este Telegram. Usa /restaurar.");  
+      return;  
+    }  
+  
+    if (registros.length > 1) {  
+      await bot.sendMessage(chatId, "⚠️ Se encontraron duplicados. Contacta al administrador para resolverlo.");  
+      return;  
+    }  
+  
+    const id = registros[0].id;  
+    const camposProtegidos = ["email", "documento", "celular", "usuario_telegram"];  
+  
+    // ⚠️ Mostrar advertencia si intenta modificar un campo sensible  
+    if (camposProtegidos.includes(campo)) {  
+      await bot.sendMessage(  
+        chatId,  
+        `🚫 El campo *${campo}* es un dato sensible y no puede modificarse directamente.\n` +  
+        "Si cambiaste de número, usuario o correo, usa /restaurar para actualizar tu cuenta.",  
+        { parse_mode: "Markdown" }  
+      );  
+      return;  
+    }  
+  
+    // ✅ Verificar si el nuevo valor es igual al actual  
+    if (registros[0][campo] && registros[0][campo].toString().toLowerCase() === valor.toLowerCase()) {  
+      await bot.sendMessage(chatId, `⚠️ No se realizaron cambios. El valor ingresado ya está registrado en ${campo}.`);  
+      return;  
+    }  
+  
+    // 🚫 Evitar duplicación de campos críticos  
+    if (camposProtegidos.includes(campo)) {  
+      const { data: existe, error: errDup } = await supabase  
+        .from(TABLE)  
+        .select("id")  
+        .eq(campo, valor);  
+  
+      if (errDup) throw errDup;  
+      if (existe && existe.length > 0 && existe[0].id !== id) {  
+        await bot.sendMessage(chatId, `🚫 Ese ${campo} ya está en uso. No se puede actualizar.`);  
+        return;  
+      }  
+    }  
+  
+    // 🧩 Convertir a mayúsculas excepto email y usuario_telegram  
+    const camposMinuscula = ["email", "usuario_telegram"];  
+    const valorFinal = camposMinuscula.includes(campo) ? valor : valor.toUpperCase();  
+  
+    // ✅ Actualizar el valor del campo  
+    const { error: errUpdate } = await supabase  
+      .from(TABLE)  
+      .update({ [campo]: valorFinal })  
+      .eq("id", id);  
+  
+    if (errUpdate) throw errUpdate;  
+  
+    await bot.sendMessage(  
+      chatId,  
+      `✅ *${campo}* actualizado correctamente a *${valorFinal}*.`,  
+      { parse_mode: "Markdown" }  
+    );  
+  
+  } catch (err) {  
+    console.error("❌ Error en /actualizacion:", err);  
+    await bot.sendMessage(chatId, "❌ Error al procesar tu actualización. Intenta más tarde.");  
+  }  
 });
-
 // =============== [8] /restaurar (documento/email → elegir qué vincular → confirmar) ===============
 bot.onText(/^\/restaurar\b/i, async (msg) => {
   const c = msg.chat.id;
