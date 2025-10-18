@@ -410,8 +410,8 @@ bot.onText(/^\/actualizacion(?:\s+(.+))?$/, async (msg, match) => {
     if (camposRestringidos.includes(campo)) {
       await bot.sendMessage(
         chatId,
-        `🚫 El campo *${campo}* no puede modificarse directamente por motivos de seguridad.\n` +
-          "Si necesitas cambiarlo, usa /restaurar o comunícate con soporte.",
+        `⚠️ El campo *${campo}* ya está registrado en otra cuenta o ya se encuentra actualizado.\n` +
+          "Si necesitas reemplazarlo, usa /restaurar para validar el cambio.",
         { parse_mode: "Markdown" }
       );
       return;
