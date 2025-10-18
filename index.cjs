@@ -247,73 +247,77 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ==================== COMANDO /MISDATOS ====================
+// ======================= COMANDO /MISDATOS =======================
 bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
   const arg = (match[1] || "").trim();
 
+  // 🧹 Normalizar número: quitar símbolos, +, y prefijo 57
   const normalizarNumero = (num = "") =>
     num.replace(/\D/g, "").replace(/^57/, "").trim();
 
+  // 👤 Usuario Telegram si existe
   const tgUsername = msg.from.username
-    ? "@" + msg.from.username.toLowerCase().trim()
+    ? "@" + msg.from.username.toLowerCase()
     : null;
 
-  await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
+  await bot.sendMessage(chatId, "🔎 Consultando tus datos, por favor espera...");
 
   try {
     let registro = null;
 
-    // 1️⃣ Buscar por usuario Telegram
+    // 1️⃣ Buscar por usuario de Telegram si lo tiene
     if (tgUsername) {
       const { data, error } = await supabase
         .from(TABLE)
         .select("*")
         .eq("usuario_telegram", tgUsername);
+
       if (error) throw error;
-      if (data?.length > 0) registro = data[0];
+      if (data && data.length > 0) registro = data[0];
     }
 
-    // 2️⃣ Buscar por número (coincidencias flexibles)
+    // 2️⃣ Buscar por número si no encontró usuario
     if (!registro) {
-      const numero = normalizarNumero(arg);
-      if (numero) {
-        const { data, error } = await supabase.from(TABLE).select("*");
-        if (error) throw error;
+      const numeroConsulta = arg ? arg : msg.from.id.toString();
+      const numero = normalizarNumero(numeroConsulta);
 
-        registro = data.find((r) => {
-          if (!r.usuario_telegram) return false;
-          const guardado = normalizarNumero(r.usuario_telegram);
-          return (
-            guardado === numero ||
-            "57" + guardado === numero ||
-            "+57" + guardado === numero
-          );
-        });
-      }
+      const { data, error } = await supabase
+        .from(TABLE)
+        .select("*");
+
+      if (error) throw error;
+
+      registro = data.find((r) => {
+        if (!r.usuario_telegram) return false;
+
+        const guardado = normalizarNumero(r.usuario_telegram);
+        const comparar = [
+          guardado,          // sin prefijo
+          "57" + guardado,   // con 57
+          "+57" + guardado,  // con +57
+        ];
+
+        return comparar.includes(numero);
+      });
     }
 
-    // 3️⃣ Si no encontró nada
+    // 3️⃣ Si no se encontró nada → mensaje corto y directo
     if (!registro) {
-      await bot.sendMessage(
-        chatId,
-        "⚠️ No se encontró un registro asociado a este usuario o número.\n" +
-          "Si perdiste acceso a tu cuenta o cambiaste tu usuario, usa /restaurar."
-      );
+      await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
       return;
     }
 
-    // 4️⃣ Mostrar ficha
+    // 4️⃣ Mostrar datos si hay coincidencia
     await new Promise((res) => setTimeout(res, 700));
     await enviarFichaDatos(chatId, registro);
+
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
-    await bot.sendMessage(
-      chatId,
-      "❌ Ocurrió un error al consultar tus datos. Intenta más tarde."
-    );
+    await bot.sendMessage(chatId, "❌ Error al consultar tus datos. Intenta más tarde.");
   }
 });
+
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
