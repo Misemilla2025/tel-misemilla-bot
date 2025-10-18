@@ -250,102 +250,97 @@ bot.onText(/\/glosario/i, async (msg) => {
 // ======================= COMANDO /MISDATOS =======================
 bot.onText(/^\/misdatos$/, async (msg) => {
   const chatId = msg.chat.id;
-  const username = msg.from.username
-    ? '@' + msg.from.username.toLowerCase().trim()
-    : msg.from.id.toString();
+
+  // username normalizado (si existe); si no, usamos el id solo para mensajes
+  const tgUsername = msg.from.username
+    ? ("@" + msg.from.username.toLowerCase().trim())
+    : null;
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // Buscar por usuario Telegram
-    const { data: registros, error } = await supabase
-      .from(TABLE)
-      .select("*")
-      .eq("usuario_telegram", username);
+    // 1) Intento por usuario_telegram = @username (si existe username)
+    if (tgUsername) {
+      const { data: byUser, error: eUser } = await supabase
+        .from(TABLE)
+        .select("*")
+        .eq("usuario_telegram", tgUsername);
 
-    if (error) throw error;
+      if (eUser) throw eUser;
 
-    // ✅ Caso 1: Usuario Telegram encontrado
-    if (registros && registros.length > 0) {
-      const registro = registros[0];
-      await new Promise(res => setTimeout(res, 800)); // Pausa
-      await enviarFichaDatos(chatId, registro);
-      return;
+      if (byUser && byUser.length > 0) {
+        await new Promise(r => setTimeout(r, 800));
+        await enviarFichaDatos(chatId, byUser[0]);
+        return;
+      }
     }
 
-    // ⚠️ Caso 2: No tiene usuario Telegram → pedir celular
-    fs.writeFileSync(MISDATOS_STATE, JSON.stringify({ chatId }));
+    // 2) No hay coincidencia por username → pedimos número SOLO para consultar
     await bot.sendMessage(
       chatId,
-      "📱 No encontré tu usuario en Telegram. Por favor, escribe tu número de celular exacto para verificar tu registro."
+      "📱 No encontré coincidencia por usuario de Telegram.\n" +
+      "Por favor, escribe tu *número de celular exacto* para verificar tu registro."
     );
 
     bot.once("message", async (resMsg) => {
-      const celular = (resMsg.text || "").trim();
-      if (!/^\d{7,15}$/.test(celular)) {
+      const texto = (resMsg.text || "").trim();
+
+      // Validación simple de número (7 a 15 dígitos)
+      if (!/^\d{7,15}$/.test(texto)) {
         await bot.sendMessage(
           chatId,
-          "⚠️ El número no es válido. Intenta nuevamente sin espacios ni símbolos."
+          "⚠️ El número no es válido. Intenta nuevamente *solo con dígitos*, sin espacios ni símbolos."
         );
-        if (fs.existsSync(MISDATOS_STATE)) fs.unlinkSync(MISDATOS_STATE);
         return;
       }
 
-      // Buscar coincidencia por celular
-      const { data: coincidencia, error: errCel } = await supabase
+      const numero = texto;
+
+      // 2A) Primero buscamos por usuario_telegram = <numero> (tu lógica)
+      const { data: byUtel, error: eUtel } = await supabase
         .from(TABLE)
         .select("*")
-        .eq("celular", celular);
+        .eq("usuario_telegram", numero);
 
-      if (errCel) throw errCel;
-      if (!coincidencia || coincidencia.length === 0) {
-        await bot.sendMessage(
-          chatId,
-          "⚠️ No encontré tu registro asociado a ese número. Usa /restaurar para vincular tu cuenta."
-        );
-        if (fs.existsSync(MISDATOS_STATE)) fs.unlinkSync(MISDATOS_STATE);
+      if (eUtel) {
+        console.error(eUtel);
+      }
+
+      if (byUtel && byUtel.length > 0) {
+        await new Promise(r => setTimeout(r, 800));
+        await enviarFichaDatos(chatId, byUtel[0]);
         return;
       }
 
-      const registro = coincidencia[0];
+      // 2B) Respaldo: buscar por campo celular = <numero>
+      const { data: byCel, error: eCel } = await supabase
+        .from(TABLE)
+        .select("*")
+        .eq("celular", numero);
 
-      // Normaliza usuario_telegram guardado y actual
-      const vinculo = (registro.usuario_telegram || "").toLowerCase().replace(/^@/, "").trim();
-      const actual = (username || "").toLowerCase().replace(/^@/, "").trim();
+      if (eCel) {
+        console.error(eCel);
+      }
 
-      // ✅ Caso 2A: El número existe y NO tiene usuario Telegram → devolver ficha
-      if (!vinculo) {
-        await new Promise(res => setTimeout(res, 800));
-        await enviarFichaDatos(chatId, registro);
-        if (fs.existsSync(MISDATOS_STATE)) fs.unlinkSync(MISDATOS_STATE);
+      if (byCel && byCel.length > 0) {
+        await new Promise(r => setTimeout(r, 800));
+        await enviarFichaDatos(chatId, byCel[0]);
         return;
       }
 
-      // ✅ Caso 2B: El número pertenece al mismo usuario Telegram
-      if (vinculo === actual) {
-        await new Promise(res => setTimeout(res, 800));
-        await enviarFichaDatos(chatId, registro);
-        if (fs.existsSync(MISDATOS_STATE)) fs.unlinkSync(MISDATOS_STATE);
-        return;
-      }
-
-      // 🚫 Caso 3: El número pertenece a otro usuario Telegram
+      // 2C) No hay registro
       await bot.sendMessage(
         chatId,
-        "🚫 Este número ya está vinculado a otro usuario de Telegram. No se puede consultar desde aquí."
+        "⚠️ No encontré un registro asociado a ese número.\n" +
+        "Si perdiste acceso a tu usuario, usa `/restaurar`."
       );
-
-      if (fs.existsSync(MISDATOS_STATE)) fs.unlinkSync(MISDATOS_STATE);
     });
-
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
-    await bot.sendMessage(
-      chatId,
-      "❌ Error al consultar tus datos. Intenta más tarde."
-    );
+    await bot.sendMessage(chatId, "❌ Error al consultar tus datos. Intenta más tarde.");
   }
 });
+
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
