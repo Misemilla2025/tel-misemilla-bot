@@ -247,11 +247,20 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ======================= COMANDO /MISDATOS =======================
+// =============== COMANDO /MISDATOS ===============
 bot.onText(/^\/misdatos$/, async (msg) => {
   const chatId = msg.chat.id;
 
-  // username normalizado (si existe); si no, usamos el id solo para mensajes
+  // 🧩 Normaliza cualquier número a formato sin + ni 57
+  function normalizarNumero(num = "") {
+    return num
+      .replace(/\+/g, "")     // quita el +
+      .replace(/^57/, "")     // quita el indicativo 57
+      .replace(/\D/g, "")     // quita cualquier otro símbolo
+      .trim();
+  }
+
+  // username normalizado (si existe); si no, usamos posible número Telegram
   const tgUsername = msg.from.username
     ? ("@" + msg.from.username.toLowerCase().trim())
     : null;
@@ -259,85 +268,61 @@ bot.onText(/^\/misdatos$/, async (msg) => {
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // 1) Intento por usuario_telegram = @username (si existe username)
+    // ==================== CASO 1: USUARIO TELEGRAM ====================
     if (tgUsername) {
-      const { data: byUser, error: eUser } = await supabase
+      const { data: registros, error } = await supabase
         .from(TABLE)
         .select("*")
         .eq("usuario_telegram", tgUsername);
 
-      if (eUser) throw eUser;
+      if (error) throw error;
 
-      if (byUser && byUser.length > 0) {
-        await new Promise(r => setTimeout(r, 800));
-        await enviarFichaDatos(chatId, byUser[0]);
+      if (registros && registros.length > 0) {
+        const registro = registros[0];
+        await new Promise((res) => setTimeout(res, 800));
+        await enviarFichaDatos(chatId, registro);
         return;
       }
     }
 
-    // 2) No hay coincidencia por username → pedimos número SOLO para consultar
+    // ==================== CASO 2: SIN USUARIO TELEGRAM ====================
+    // Buscar coincidencia flexible por número Telegram guardado en la tabla
+    // Se basa en que el campo usuario_telegram puede contener +, 57 o solo el número
+    const { data: todos, error: errAll } = await supabase
+      .from(TABLE)
+      .select("usuario_telegram, *");
+
+    if (errAll) throw errAll;
+
+    // Normalizamos lo que se recibe desde Telegram (número del remitente o id)
+    const posibleNum = msg.from.phone_number || msg.chat.username || "";
+    const buscado = normalizarNumero(posibleNum);
+
+    const coincidencia = todos.find((r) => {
+      if (!r.usuario_telegram) return false;
+      const guardado = normalizarNumero(r.usuario_telegram);
+      return guardado === buscado;
+    });
+
+    if (coincidencia) {
+      await new Promise((res) => setTimeout(res, 800));
+      await enviarFichaDatos(chatId, coincidencia);
+      return;
+    }
+
+    // ==================== CASO 3: SIN COINCIDENCIA ====================
     await bot.sendMessage(
       chatId,
-      "📱 No encontré coincidencia por usuario de Telegram.\n" +
-      "Por favor, escribe tu *número de celular exacto* para verificar tu registro."
+      "⚠️ No se encontró un registro asociado a este usuario o número.\n" +
+      "Si perdiste acceso a tu cuenta o cambiaste tu usuario, usa /restaurar."
     );
 
-    bot.once("message", async (resMsg) => {
-      const texto = (resMsg.text || "").trim();
-
-      // Validación simple de número (7 a 15 dígitos)
-      if (!/^\d{7,15}$/.test(texto)) {
-        await bot.sendMessage(
-          chatId,
-          "⚠️ El número no es válido. Intenta nuevamente *solo con dígitos*, sin espacios ni símbolos."
-        );
-        return;
-      }
-
-      const numero = texto;
-
-      // 2A) Primero buscamos por usuario_telegram = <numero> (tu lógica)
-      const { data: byUtel, error: eUtel } = await supabase
-        .from(TABLE)
-        .select("*")
-        .eq("usuario_telegram", numero);
-
-      if (eUtel) {
-        console.error(eUtel);
-      }
-
-      if (byUtel && byUtel.length > 0) {
-        await new Promise(r => setTimeout(r, 800));
-        await enviarFichaDatos(chatId, byUtel[0]);
-        return;
-      }
-
-      // 2B) Respaldo: buscar por campo celular = <numero>
-      const { data: byCel, error: eCel } = await supabase
-        .from(TABLE)
-        .select("*")
-        .eq("celular", numero);
-
-      if (eCel) {
-        console.error(eCel);
-      }
-
-      if (byCel && byCel.length > 0) {
-        await new Promise(r => setTimeout(r, 800));
-        await enviarFichaDatos(chatId, byCel[0]);
-        return;
-      }
-
-      // 2C) No hay registro
-      await bot.sendMessage(
-        chatId,
-        "⚠️ No encontré un registro asociado a ese número.\n" +
-        "Si perdiste acceso a tu usuario, usa `/restaurar`."
-      );
-    });
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
-    await bot.sendMessage(chatId, "❌ Error al consultar tus datos. Intenta más tarde.");
+    await bot.sendMessage(
+      chatId,
+      "❌ Ocurrió un error al consultar tus datos. Intenta más tarde."
+    );
   }
 });
 
@@ -520,62 +505,51 @@ Ahora, *¿qué deseas vincular?*
   }
 });
 
-// =============== [9] Respuestas inteligentes (no invaden flujos activos) ===============
+// ============= [9] Respuestas inteligentes (no invaden flujos activos) =============
 bot.on("message", async (msg) => {
   const c = msg.chat.id;
   const txt = (msg.text || "").trim();
   if (!txt) return;
 
-  // ✅ Ignorar si hay procesos activos o si está esperando celular en /misdatos
+  // ✅ Ignorar si hay procesos activos o si el texto comienza con "/"
   const hayFlujo =
     fs.existsSync(PENDIENTE_STATE) ||
     fs.existsSync(RESTAURAR_STATE) ||
     fs.existsSync(MISDATOS_STATE);
 
-  // Si hay flujo activo o si el texto es respuesta a un comando, no responder
+  // Si hay flujo activo o es un comando, no responder
   if (hayFlujo || txt.startsWith("/")) return;
 
   const lower = txt.toLowerCase();
 
-  // 👇 Todas las respuestas automáticas normales
+  // 👋 Saludos automáticos (solo si no hay flujo activo)
   if (/^(hola|buenas|saludos|buen día|buenas tardes|buenas noches)\b/.test(lower)) {
-    await send(c, "👋 ¡Hola! Usa /ayuda para ver lo que puedo hacer.");
+    await send(c, "🤖 ¡Hola! Usa /ayuda para ver los comandos disponibles.");
     return;
   }
 
-  if (/(ayuda|soporte|problema|no entiendo|quien me ayuda)/.test(lower)) {
-    await send(c,
-"🤝 *Centro de ayuda de Mi Semilla*\n\n" +
-"📄 `/misdatos` → consulta tu registro\n" +
-"🛠️ `/actualizacion` → modifica tus datos\n" +
-"📘 `/glosario` → ver campos\n" +
-"♻️ `/restaurar` → vincular si perdiste acceso");
+  // 🧭 Peticiones de ayuda o soporte
+  if (/(ayuda|soporte|problema|no entiendo|quién me ayuda)/.test(lower)) {
+    await send(
+      c,
+      "*Centro de ayuda de Mi Semilla*\n\n" +
+      "📋 `/misdatos` → consulta tu registro\n" +
+      "📝 `/actualizacion` → modifica tus datos\n" +
+      "📘 `/glosario` → ver los campos disponibles\n" +
+      "♻️ `/restaurar` → vincular si perdiste acceso"
+    );
     return;
   }
 
-  if (/(actualizar|cambiar|modificar|editar|necesito)/.test(lower)) {
-    await send(c,
-"✏️ Veo que deseas *actualizar tus datos*.\n\n" +
-"Usa:\n`/actualizacion campo valor`\n" +
-"Ejemplo:\n`/actualizacion ciudad Bogotá`\n\n" +
-"Para ver los campos disponibles: `/glosario`");
-    return;
+  // 🔔 Respuesta por defecto cuando escribe algo fuera de contexto
+  if (!txt.startsWith("/")) {
+    await send(
+      c,
+      "🤖 No entendí tu mensaje. Escribe `/ayuda` para ver las opciones disponibles."
+    );
   }
-
-  if (/(gracias|ok|listo|perfecto)/.test(lower)) {
-    await send(c, "✅ ¡Listo! Si necesitas algo más, aquí estoy. 🙌");
-    return;
-  }
-
-  // Mensaje por defecto
-  await send(c,
-"🤖 Hola 👋\n\n" +
-"¿Deseas consultar o actualizar tu información?\n\n" +
-"• `/misdatos` para ver tu registro\n" +
-"• `/actualizacion` para cambiar un dato\n" +
-"• `/glosario` para ver los campos\n" +
-"• `/restaurar` si perdiste acceso");
 });
+
 // =============== [10] Confirmación de arranque ===============
 bot.getMe()
   .then(info => console.log(`✅ Bot conectado como: @${info.username}`))
