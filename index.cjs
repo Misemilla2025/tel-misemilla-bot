@@ -283,12 +283,18 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
       const { data, error } = await supabase.from(TABLE).select("*");
       if (error) throw error;
 
-      registro = data.find((r) => {
-        if (!r.usuario_telegram) return false;
-        const guardado = normalizarNumero(r.usuario_telegram);
-        return guardado === numero;
-      });
-    }
+registro = data.find((r) => {
+  if (!r.usuario_telegram) return false;
+
+  const guardado = normalizarNumero(r.usuario_telegram);
+  const comparar = [
+    guardado,                // sin + ni 57
+    "57" + guardado,         // con 57
+    "+57" + guardado         // con +57
+  ];
+
+  return comparar.includes(numero);
+});
 
     // 3️⃣ No se encontró nada
     if (!registro) {
@@ -365,15 +371,15 @@ async function enviarFichaDatos(chatId, r) {
   await bot.sendMessage(chatId, texto, { parse_mode: "Markdown" });
 }
 
-// ================== COMANDO /ACTUALIZACION ==================
+// ==================== COMANDO /ACTUALIZACION ====================
 bot.onText(/^\/actualizacion(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
   const args = (match[1] || "").trim();
 
   if (!args) {
-    let texto = "🫱 Para actualizar un campo, escribe:\n";
+    let texto = "👉 Para actualizar un campo, escribe:\n";
     texto += "`/actualizacion campo valor`\n\n";
-    texto += "📋 Ejemplos:\n";
+    texto += "🧾 Ejemplos:\n";
     texto += "`/actualizacion ciudad Bogotá`\n";
     texto += "`/actualizacion nombre_completo Juan Pérez`\n";
     texto += "\nUsa /glosario para ver la lista de campos disponibles.";
@@ -383,42 +389,55 @@ bot.onText(/^\/actualizacion(?:\s+(.+))?$/, async (msg, match) => {
 
   try {
     const partes = args.split(" ");
-    const campo = partes.shift()?.trim().toLowerCase();
-    const valor = partes.join(" ").trim();
+    const campo = partes.shift()?.trim();
+    const valorOriginal = partes.join(" ").trim();
 
-    if (!campo || !valor) {
-      await bot.sendMessage(
-        chatId,
-        "⚠️ Debes indicar el campo y el nuevo valor.\nEjemplo: `/actualizacion ciudad Bogotá`",
-        { parse_mode: "Markdown" }
-      );
+    if (!campo || !valorOriginal) {
+      await bot.sendMessage(chatId, "⚠️ Formato inválido. Usa `/actualizacion campo valor`.", { parse_mode: "Markdown" });
       return;
     }
 
+    // Normaliza valor: MAYÚSCULAS excepto ciertos campos
+    const noMayus = ["email", "usuario_telegram", "ref_telegram"];
+    const valor = noMayus.includes(campo.toLowerCase())
+      ? valorOriginal.trim()
+      : valorOriginal.toUpperCase().trim();
+
+    // Busca registro por usuario Telegram
+    const tgUsername = msg.from.username
+      ? "@" + msg.from.username.toLowerCase().trim()
+      : null;
+
     const { data, error } = await supabase
       .from(TABLE)
-      .update({ [campo]: valor })
-      .eq("usuario_telegram", "@" + msg.from.username.toLowerCase())
-      .select();
+      .select("*")
+      .eq("usuario_telegram", tgUsername);
 
     if (error) throw error;
-    if (data && data.length > 0) {
-      await bot.sendMessage(
-        chatId,
-        "✅ Tu dato ha sido actualizado correctamente."
-      );
-    } else {
-      await bot.sendMessage(
-        chatId,
-        "⚠️ No se encontró tu registro. Verifica tu usuario o usa /restaurar."
-      );
+    if (!data || data.length === 0) {
+      await bot.sendMessage(chatId, "⚠️ No se encontró tu registro. Verifica tu usuario o usa /restaurar.");
+      return;
     }
+
+    const registro = data[0];
+
+    // Actualiza valor
+    const payload = {};
+    payload[campo] = valor;
+    payload["ultima_actualizacion"] = new Date().toISOString();
+    payload["origen"] = "actualizacion_tg";
+
+    const { error: e } = await supabase
+      .from(TABLE)
+      .update(payload)
+      .eq("id", registro.id);
+
+    if (e) throw e;
+
+    await bot.sendMessage(chatId, `✅ Tu dato *${campo}* ha sido actualizado correctamente.`, { parse_mode: "Markdown" });
   } catch (err) {
     console.error("❌ Error en /actualizacion:", err);
-    await bot.sendMessage(
-      chatId,
-      "❌ Hubo un error al actualizar tus datos. Intenta más tarde."
-    );
+    await bot.sendMessage(chatId, "❌ Hubo un error al actualizar tus datos. Intenta más tarde.");
   }
 });
 
