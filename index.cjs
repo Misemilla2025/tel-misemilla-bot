@@ -247,7 +247,7 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ================== COMANDO /MISDATOS ==================
+// ==================== COMANDO /MISDATOS ====================
 bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
   const arg = (match[1] || "").trim();
@@ -267,7 +267,7 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
     let registro = null;
 
     // 1️⃣ Buscar por usuario Telegram
-    if (tgUsername && !arg) {
+    if (tgUsername) {
       const { data, error } = await supabase
         .from(TABLE)
         .select("*")
@@ -277,26 +277,31 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
       if (data && data.length > 0) registro = data[0];
     }
 
-    // 2️⃣ Buscar por número si fue escrito
-    if (!registro && arg) {
-      const numero = normalizarNumero(arg);
-      const { data, error } = await supabase.from(TABLE).select("*");
-      if (error) throw error;
+    // 2️⃣ Si no encontró por usuario o no tiene @usuario, buscar por número
+    if (!registro) {
+      // Tomar número del argumento o del username (por si el username es numérico)
+      const numero = normalizarNumero(arg || msg.from.username || "");
 
-registro = data.find((r) => {
-  if (!r.usuario_telegram) return false;
+      if (numero) {
+        const { data, error } = await supabase.from(TABLE).select("*");
+        if (error) throw error;
 
-  const guardado = normalizarNumero(r.usuario_telegram);
-  const comparar = [
-    guardado,                // sin + ni 57
-    "57" + guardado,         // con 57
-    "+57" + guardado         // con +57
-  ];
+        registro = data.find((r) => {
+          if (!r.usuario_telegram) return false;
 
-  return comparar.includes(numero);
-});
+          const guardado = normalizarNumero(r.usuario_telegram);
+          const comparar = [
+            guardado,          // sin prefijo
+            "57" + guardado,   // con 57
+            "+57" + guardado,  // con +57
+          ];
 
-    // 3️⃣ No se encontró nada
+          return comparar.includes(numero);
+        });
+      }
+    }
+
+    // 3️⃣ Si no encontró nada
     if (!registro) {
       await bot.sendMessage(
         chatId,
@@ -306,7 +311,7 @@ registro = data.find((r) => {
       return;
     }
 
-    // 4️⃣ Mostrar datos
+    // 4️⃣ Mostrar datos con pausa breve
     await new Promise((res) => setTimeout(res, 800));
     await enviarFichaDatos(chatId, registro);
   } catch (err) {
