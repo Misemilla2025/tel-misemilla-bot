@@ -251,19 +251,23 @@ bot.onText(/\/glosario/i, async (msg) => {
 bot.onText(/^\/misdatos$/, async (msg) => {
   const chatId = msg.chat.id;
 
-  // 🧩 Normaliza cualquier número a formato sin + ni 57
+  // 🧩 Función para normalizar números (quita +, 57 y símbolos)
   function normalizarNumero(num = "") {
     return num
-      .replace(/\+/g, "")     // quita el +
-      .replace(/^57/, "")     // quita el indicativo 57
-      .replace(/\D/g, "")     // quita cualquier otro símbolo
+      .toString()
+      .replace(/\+/g, "")
+      .replace(/^57/, "")
+      .replace(/\D/g, "")
       .trim();
   }
 
-  // username normalizado (si existe); si no, usamos posible número Telegram
+  // Capturar username de Telegram si existe
   const tgUsername = msg.from.username
     ? ("@" + msg.from.username.toLowerCase().trim())
     : null;
+
+  // Si no tiene username, usamos el ID numérico del chat como referencia
+  const userKey = tgUsername || msg.chat.id.toString();
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
@@ -285,23 +289,25 @@ bot.onText(/^\/misdatos$/, async (msg) => {
       }
     }
 
-    // ==================== CASO 2: SIN USUARIO TELEGRAM ====================
-    // Buscar coincidencia flexible por número Telegram guardado en la tabla
-    // Se basa en que el campo usuario_telegram puede contener +, 57 o solo el número
+    // ==================== CASO 2: COINCIDENCIA FLEXIBLE POR NÚMERO ====================
+    // Buscar coincidencia flexible en campo usuario_telegram que pueda contener número con o sin prefijo
     const { data: todos, error: errAll } = await supabase
       .from(TABLE)
-      .select("usuario_telegram, *");
+      .select("*");
 
     if (errAll) throw errAll;
 
-    // Normalizamos lo que se recibe desde Telegram (número del remitente o id)
-    const posibleNum = msg.from.phone_number || msg.chat.username || "";
-    const buscado = normalizarNumero(posibleNum);
+    // Intentamos usar el número o ID del chat actual como referencia
+    const posiblesClaves = [
+      normalizarNumero(chatId),           // ID numérico del chat
+      normalizarNumero("+" + chatId),     // por si se guardó con +
+      normalizarNumero("57" + chatId),    // por si se guardó con 57
+    ];
 
     const coincidencia = todos.find((r) => {
       if (!r.usuario_telegram) return false;
       const guardado = normalizarNumero(r.usuario_telegram);
-      return guardado === buscado;
+      return posiblesClaves.includes(guardado);
     });
 
     if (coincidencia) {
@@ -325,7 +331,6 @@ bot.onText(/^\/misdatos$/, async (msg) => {
     );
   }
 });
-
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
