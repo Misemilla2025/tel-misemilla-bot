@@ -411,25 +411,12 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
     }
 
     const id = registros[0].id;
+    const registroActual = registros[0];
     const camposProtegidos = ["email", "documento", "celular", "usuario_telegram"];
-
-    // ⚠️ Solicitar confirmación si es un campo sensible
-    if (camposProtegidos.includes(campo)) {
-      await bot.sendMessage(
-        chatId,
-        `⚠️ *Alerta:* El campo *${campo}* es un dato sensible.\n` +
-        "Este cambio puede afectar tu acceso.\n" +
-        "¿Deseas continuar con la actualización? Responde *sí* o *no*.",
-        { parse_mode: "Markdown" }
-      );
-
-      // Guardar solicitud pendiente temporalmente
-      global.confirmacionPendiente = { chatId, campo, valor, id };
-      return;
-    }
+    const camposMinuscula = ["email", "usuario_telegram"];
 
     // ✅ Verificar si el nuevo valor es igual al actual
-    if (registros[0][campo] && registros[0][campo].toString().toLowerCase() === valor.toLowerCase()) {
+    if (registroActual[campo] && registroActual[campo].toString().toLowerCase() === valor.toLowerCase()) {
       await bot.sendMessage(chatId, `⚠️ No se realizaron cambios. El valor ingresado ya está registrado en ${campo}.`);
       return;
     }
@@ -448,11 +435,30 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
       }
     }
 
-    // 🧩 Convertir a mayúsculas excepto email y usuario_telegram
-    const camposMinuscula = ["email", "usuario_telegram"];
+    // ⚠️ Confirmación para campos sensibles
+    if (camposProtegidos.includes(campo)) {
+      await bot.sendMessage(
+        chatId,
+        `⚠️ *Alerta:* El campo *${campo}* es un dato sensible.\n` +
+        "Este cambio puede afectar tu acceso.\n" +
+        "¿Deseas continuar con la actualización? Responde *sí* o *no*.",
+        { parse_mode: "Markdown" }
+      );
+
+      // Guardamos temporalmente los datos en memoria
+      global.confirmacionPendiente = {
+        chatId,
+        id,
+        campo,
+        valor,
+        campoMinuscula: camposMinuscula.includes(campo)
+      };
+      return;
+    }
+
+    // 🧩 Si no es sensible, actualizar directamente
     const valorFinal = camposMinuscula.includes(campo) ? valor : valor.toUpperCase();
 
-    // ✅ Actualizar el valor del campo
     const { error: errUpdate } = await supabase
       .from(TABLE)
       .update({ [campo]: valorFinal })
@@ -476,37 +482,35 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
 // ======================= CONFIRMACIÓN DE CAMPOS SENSIBLES =======================
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
-  const respuesta = msg.text?.toLowerCase().trim();
+  const texto = msg.text?.toLowerCase().trim();
 
-  // Verificar si hay una confirmación pendiente
   if (!global.confirmacionPendiente) return;
-  const { campo, valor, id } = global.confirmacionPendiente;
-  if (chatId !== global.confirmacionPendiente.chatId) return;
+  const pendiente = global.confirmacionPendiente;
+  if (chatId !== pendiente.chatId) return;
 
-  if (respuesta !== "sí" && respuesta !== "si" && respuesta !== "no") return;
+  // Acepta “sí”, “si” y “no”
+  if (!["sí", "si", "no"].includes(texto)) return;
 
-  if (respuesta === "no") {
+  if (texto === "no") {
     await bot.sendMessage(chatId, "❌ Actualización cancelada por el usuario.");
     global.confirmacionPendiente = null;
     return;
   }
 
   try {
-    // 🧩 Convertir a mayúsculas excepto email y usuario_telegram
-    const camposMinuscula = ["email", "usuario_telegram"];
-    const valorFinal = camposMinuscula.includes(campo) ? valor : valor.toUpperCase();
+    const valorFinal = pendiente.campoMinuscula ? pendiente.valor : pendiente.valor.toUpperCase();
 
     const { error: errUpdate } = await supabase
       .from(TABLE)
-      .update({ [campo]: valorFinal })
-      .eq("id", id);
+      .update({ [pendiente.campo]: valorFinal })
+      .eq("id", pendiente.id);
 
     if (errUpdate) throw errUpdate;
 
     const fecha = new Date().toLocaleDateString("es-CO");
     await bot.sendMessage(
       chatId,
-      `✅ Tu campo *${campo}* fue actualizado correctamente a *${valorFinal}*.\n📅 Actualizado el ${fecha}`,
+      `✅ Tu campo *${pendiente.campo}* fue actualizado correctamente a *${valorFinal}*.\n📅 Actualizado el ${fecha}`,
       { parse_mode: "Markdown" }
     );
 
