@@ -286,62 +286,119 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ======================= LÓGICA SEGURA /MISDATOS =======================
-bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
+// ======================= /MISDATOS (búsqueda segura y robusta) =======================
+bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id.toString();
-  const entrada = match[1]?.trim();
-  const username = msg.from.username ? '@' + msg.from.username.toLowerCase() : null;
+  const entrada = (match[1] || "").trim();
+  const tgUsername = msg.from.username ? ("@" + msg.from.username.toLowerCase()) : null;
+
+  const normalizarNumero = (s = "") =>
+    (s + "").replace(/\D/g, ""); // solo dígitos
+
+  const variantesNumero = (s = "") => {
+    const d = normalizarNumero(s);
+    if (!d) return [];
+    // si viene con 57 al inicio, también generar sin 57 (por si la base guarda local)
+    if (d.startsWith("57") && d.length === 12) {
+      const sin = d.slice(2);
+      return [d, sin, "+57" + sin];
+    }
+    // si viene local 10 dígitos, generar con 57 y +57
+    if (d.length === 10) return [d, "57" + d, "+57" + d];
+    // cualquier otro largo: igual probar tal cual
+    return [d];
+  };
+
+  const esUsuarioVacio = (u) => !u || !String(u).trim();
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // 1️⃣ Buscar registro por número, usuario o chat_id
-    const { data, error } = await supabase
-      .from("registros_miembros")
-      .select("*")
-      .or([
-        entrada && /^\d+$/.test(entrada) ? `celular.eq.${entrada}` : null,
-        username ? `usuario_telegram.eq.${username}` : null,
-        `chat_id.eq.${chatId}`
-      ].filter(Boolean).join(","))
-      .limit(1)
-      .maybeSingle();
+    let registro = null;
 
-    if (error) throw error;
-    if (!data) {
+    // 1) Si tengo @usuario en Telegram → buscar por usuario_telegram exacto
+    if (tgUsername) {
+      const { data, error } = await supabase
+        .from(TABLE)
+        .select("*")
+        .eq("usuario_telegram", tgUsername)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) registro = data;
+    }
+
+    // 2) Si no se halló por usuario, probar por chat_id (para registros sin usuario_telegram)
+    if (!registro) {
+      const { data, error } = await supabase
+        .from(TABLE)
+        .select("*")
+        .eq("chat_id", chatId)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) registro = data;
+    }
+
+    // 3) Si vino un número en el comando, probar por celular con variantes
+    //    Esto permite a quienes NO tienen usuario_telegram validar por celular
+    if (!registro && entrada) {
+      const dig = normalizarNumero(entrada);
+      if (dig) {
+        // intentamos traer candidatos por OR (todas las variantes)
+        const ors = variantesNumero(entrada)
+          .map(v => `celular.eq.${v}`)
+          .join(",");
+        if (ors) {
+          const { data, error } = await supabase
+            .from(TABLE)
+            .select("*")
+            .or(ors)
+            .limit(1);
+          if (error) throw error;
+          if (data && data.length) registro = data[0];
+        }
+      }
+    }
+
+    // 4) Si no hay nada, salida directa
+    if (!registro) {
       await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
       return;
     }
 
-    // 2️⃣ Validar coincidencia real
-    const tieneUsuarioTg = !!data.usuario_telegram;
-    const coincideUsuario = username && data.usuario_telegram?.toLowerCase() === username.toLowerCase();
-    const coincideChat = data.chat_id?.toString() === chatId;
-    const coincideCel = entrada && data.celular?.replace(/\D/g, "") === entrada.replace(/\D/g, "");
+    // 5) Validaciones de acceso
+    const tieneUsuario = !esUsuarioVacio(registro.usuario_telegram);
+    const coincideUsuario = tgUsername && (registro.usuario_telegram || "").toLowerCase() === tgUsername.toLowerCase();
+    const coincideChatId = (registro.chat_id || "").toString() === chatId;
 
-    if (tieneUsuarioTg && !coincideUsuario) {
+    // si el registro TIENE usuario_telegram, solo el mismo @ puede ver
+    if (tieneUsuario && !coincideUsuario) {
       await bot.sendMessage(chatId, "🚫 Este registro está vinculado a otro usuario de Telegram.");
-      console.log(`❌ Consulta bloqueada: chatId ${chatId} no coincide con ${data.usuario_telegram}`);
       return;
     }
 
-    if (!tieneUsuarioTg && !(coincideChat || coincideCel)) {
-      await bot.sendMessage(chatId, "⚠️ No se encontró coincidencia exacta con tu cuenta o número.");
-      console.log(`⚠️ Consulta rechazada sin usuario Telegram — chatId ${chatId}`);
-      return;
+    // si NO tiene usuario_telegram, debe coincidir chat_id o el celular exacto del comando
+    if (!tieneUsuario && !coincideChatId) {
+      if (entrada) {
+        const ent = normalizarNumero(entrada);
+        const cel = normalizarNumero(registro.celular || "");
+        const okNumero = variantesNumero(cel).includes(ent) || variantesNumero(ent).includes(cel);
+        if (!okNumero) {
+          await bot.sendMessage(chatId, "⚠️ No se encontró coincidencia exacta con tu cuenta o número.");
+          return;
+        }
+      } else {
+        await bot.sendMessage(chatId, "⚠️ No se encontró coincidencia exacta con tu cuenta o número.");
+        return;
+      }
     }
 
-    // 3️⃣ Si no tenía chat_id, lo guarda para futuras coincidencias
-    if (!data.chat_id) {
-      await supabase
-        .from("registros_miembros")
-        .update({ chat_id: chatId })
-        .eq("id", data.id);
-      console.log(`✅ chat_id ${chatId} vinculado a ID ${data.id}`);
+    // 6) Vincular chat_id si estaba vacío (mejora futura coincidencia)
+    if (!registro.chat_id) {
+      await supabase.from(TABLE).update({ chat_id: chatId }).eq("id", registro.id);
     }
 
-    // 4️⃣ Mostrar ficha (usa tu bloque visual actual)
-    await enviarFichaDatos(chatId, data);
+    // 7) Mostrar ficha (usas tu función actual, que ya arma toda la tabla)
+    await enviarFichaDatos(chatId, registro);
 
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
