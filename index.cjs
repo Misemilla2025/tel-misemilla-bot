@@ -286,7 +286,7 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ======================= /MISDATOS FINAL =======================
+// ======================= /MISDATOS (depuración visible) =======================
 bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id.toString();
   const entrada = (match[1] || "").trim();
@@ -338,7 +338,7 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
 
     // 4️⃣ Si no hay coincidencia
     if (!registro) {
-      console.log(`🔎 ${modo} para chatId ${chatId}`);
+      console.log(`❌ No se encontró coincidencia para chatId ${chatId}`);
       await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
       return;
     }
@@ -351,14 +351,13 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
     // ✅ Si tiene usuario Telegram → debe coincidir
     if (tieneUsuario && !coincideUsuario) {
       console.log(`🚫 Bloqueado: registro pertenece a ${registro.usuario_telegram}, chat actual ${tgUsername || "sin usuario"}`);
-      await bot.sendMessage(chatId, "🚫 Este registro está vinculado a otro usuario de Telegram.");
+      await bot.sendMessage(chatId, `🚫 Registro pertenece a ${registro.usuario_telegram || "(sin dato)"} — tu usuario: ${tgUsername || "(sin usuario)"}`);
       return;
     }
 
     // ✅ Si NO tiene usuario Telegram → permitir si coincide chat_id o número
     if (!tieneUsuario) {
       let ok = false;
-
       if (coincideChat) ok = true;
 
       if (!ok && entrada) {
@@ -369,7 +368,7 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
 
       if (!ok) {
         console.log(`⚠️ Bloqueado: sin usuario Telegram y sin coincidencia válida`);
-        await bot.sendMessage(chatId, "⚠️ No se encontró coincidencia exacta con tu cuenta o número.");
+        await bot.sendMessage(chatId, "⚠️ Sin coincidencia válida con tu cuenta o número.");
         return;
       }
     }
@@ -382,8 +381,9 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
       console.log(`🔹 Usuario ya tiene chat_id registrado (${registro.chat_id})`);
     }
 
-    // 7️⃣ Mostrar los datos
+    // 7️⃣ Mostrar los datos y método
     console.log(`📗 Registro devuelto (${modo}) → ID ${registro.id}`);
+    await bot.sendMessage(chatId, `✅ *Coincidencia confirmada:* ${modo}`, { parse_mode: "Markdown" });
     await enviarFichaDatos(chatId, registro);
 
   } catch (err) {
@@ -391,6 +391,7 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
     await bot.sendMessage(chatId, "⚠️ Error al consultar tus datos. Intenta nuevamente.");
   }
 });
+
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
