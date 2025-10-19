@@ -308,14 +308,14 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
     let registro = null;
     let modo = "❌ Sin coincidencia";
 
-    // 1️⃣ Buscar primero por chat_id (más directo)
+    // 1️⃣ Buscar primero por chat_id
     const chatQuery = await supabase.from(TABLE).select("*").eq("chat_id", chatId).maybeSingle();
     if (chatQuery.data) {
       registro = chatQuery.data;
       modo = "✅ Coincidencia por chat_id";
     }
 
-    // 2️⃣ Si no hay por chat_id, buscar por usuario Telegram (si existe)
+    // 2️⃣ Si no hay coincidencia, buscar por usuario Telegram
     if (!registro && tgUsername) {
       const userQuery = await supabase.from(TABLE).select("*").eq("usuario_telegram", tgUsername).maybeSingle();
       if (userQuery.data) {
@@ -324,7 +324,7 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
       }
     }
 
-    // 3️⃣ Si no hay, buscar por número si se envió
+    // 3️⃣ Si tampoco, buscar por número de celular si se envió
     if (!registro && entrada) {
       const ors = variantes(entrada).map(v => `celular.eq.${v}`).join(",");
       if (ors) {
@@ -336,7 +336,7 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
       }
     }
 
-    // 4️⃣ Si no hay coincidencias, mensaje directo
+    // 4️⃣ Si no hay coincidencia
     if (!registro) {
       console.log(`🔎 ${modo} para chatId ${chatId}`);
       await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
@@ -348,21 +348,25 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
     const coincideUsuario = tgUsername && (registro.usuario_telegram || "").toLowerCase() === tgUsername.toLowerCase();
     const coincideChat = registro.chat_id && registro.chat_id.toString() === chatId;
 
-    // 🔒 Si tiene usuario_telegram y no coincide, bloquear
+    // ✅ Si tiene usuario Telegram → debe coincidir
     if (tieneUsuario && !coincideUsuario) {
       console.log(`🚫 Bloqueado: registro pertenece a ${registro.usuario_telegram}, chat actual ${tgUsername || "sin usuario"}`);
       await bot.sendMessage(chatId, "🚫 Este registro está vinculado a otro usuario de Telegram.");
       return;
     }
 
-    // 🔓 Si no tiene usuario_telegram, permitir si coincide chat o número
-    if (!tieneUsuario && !coincideChat) {
+    // ✅ Si NO tiene usuario Telegram → permitir si coincide chat_id o número
+    if (!tieneUsuario) {
       let ok = false;
-      if (entrada) {
+
+      if (coincideChat) ok = true;
+
+      if (!ok && entrada) {
         const cel = limpiarNumero(registro.celular || "");
         const ent = limpiarNumero(entrada);
         ok = variantes(cel).includes(ent) || variantes(ent).includes(cel);
       }
+
       if (!ok) {
         console.log(`⚠️ Bloqueado: sin usuario Telegram y sin coincidencia válida`);
         await bot.sendMessage(chatId, "⚠️ No se encontró coincidencia exacta con tu cuenta o número.");
@@ -370,13 +374,15 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
       }
     }
 
-    // 6️⃣ Guardar chat_id si estaba vacío (para futuros accesos)
+    // 6️⃣ Guardar chat_id si no está en la tabla
     if (!registro.chat_id) {
       await supabase.from(TABLE).update({ chat_id: chatId }).eq("id", registro.id);
       console.log(`💾 chat_id ${chatId} guardado en registro ID ${registro.id}`);
+    } else {
+      console.log(`🔹 Usuario ya tiene chat_id registrado (${registro.chat_id})`);
     }
 
-    // 7️⃣ Mostrar ficha
+    // 7️⃣ Mostrar los datos
     console.log(`📗 Registro devuelto (${modo}) → ID ${registro.id}`);
     await enviarFichaDatos(chatId, registro);
 
