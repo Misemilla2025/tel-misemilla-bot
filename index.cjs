@@ -247,30 +247,28 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ======================= COMANDO /MISDATOS =======================
-bot.onText(/^\/misdatos$/, async (msg) => {
+// ======================= COMANDO /MISDATOS (SEGURIDAD REFORZADA) =======================
+bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
+  const entrada = (match[1] || "").trim();
 
   // 👤 Usuario Telegram (si tiene)
   const tgUsername = msg.from.username
     ? "@" + msg.from.username.toLowerCase().trim()
     : null;
 
-  // 🧹 Normalizar números para comparación
-  const limpiarNumero = (num = "") => {
-    return num
-      .toString()
-      .replace(/\D/g, "")       // elimina todo excepto dígitos
-      .replace(/^57/, "")       // quita prefijo 57 si existe
-      .slice(-10);              // deja últimos 10 dígitos
+  // 🧹 Normalizar números: limpia, quita prefijo y deja últimos 10 dígitos
+  const normalizarNumero = (num = "") => {
+    const limpio = num.toString().replace(/\D/g, "").replace(/^57/, "");
+    return limpio.slice(-10);
   };
 
-  await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
+  await bot.sendMessage(chatId, "🔎 Consultando tus datos, por favor espera...");
 
   try {
     let registro = null;
 
-    // 1️⃣ Si el usuario tiene @usuario de Telegram
+    // 1️⃣ Buscar por usuario de Telegram si existe
     if (tgUsername) {
       const { data, error } = await supabase
         .from(TABLE)
@@ -281,31 +279,51 @@ bot.onText(/^\/misdatos$/, async (msg) => {
       if (data && data.length > 0) registro = data[0];
     }
 
-    // 2️⃣ Si no tiene usuario, intentamos con número (en el campo usuario_telegram)
+    // 2️⃣ Si no tiene username, validar por número SOLO si está realmente vinculado a él
     if (!registro) {
-      // Tomamos el número del chat si no hay username
-      const posibleNumero = msg.from.phone_number || msg.from.id.toString();
-      const miNumero = limpiarNumero(posibleNumero);
+      if (!entrada) {
+        await bot.sendMessage(
+          chatId,
+          "📱 No tienes usuario de Telegram asociado.\nPor seguridad, escribe tu número exacto vinculado así:\n`/misdatos 3126547890`",
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
 
-      // Traemos todos los registros y buscamos coincidencia flexible
-      const { data, error } = await supabase.from(TABLE).select("*");
+      const numeroConsulta = normalizarNumero(entrada);
+
+      // Buscar ese número exacto en la base
+      const { data, error } = await supabase
+        .from(TABLE)
+        .select("*")
+        .or(`usuario_telegram.eq.${numeroConsulta},celular.eq.${numeroConsulta}`);
+
       if (error) throw error;
 
-      registro = data.find((r) => {
-        if (!r.usuario_telegram) return false;
-        const guardado = limpiarNumero(r.usuario_telegram);
-        return guardado && guardado === miNumero;
-      });
+      if (!data || data.length === 0) {
+        await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
+        return;
+      }
+
+      // ⚠️ Validar que ese registro esté efectivamente vinculado al mismo chatId
+      const coincide = data.find((r) => r.chat_id && r.chat_id.toString() === chatId.toString());
+
+      if (!coincide) {
+        await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado a tu cuenta actual.");
+        return;
+      }
+
+      registro = coincide;
     }
 
-    // 3️⃣ Si no se encuentra ningún registro
+    // 3️⃣ Si aún no se encontró nada
     if (!registro) {
       await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
       return;
     }
 
-    // 4️⃣ Si hay coincidencia, mostrar datos
-    await new Promise((res) => setTimeout(res, 800));
+    // 4️⃣ Mostrar datos si hay coincidencia válida
+    await new Promise((res) => setTimeout(res, 700));
     await enviarFichaDatos(chatId, registro);
 
   } catch (err) {
@@ -313,7 +331,6 @@ bot.onText(/^\/misdatos$/, async (msg) => {
     await bot.sendMessage(chatId, "❌ Error al consultar tus datos. Intenta más tarde.");
   }
 });
-
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
