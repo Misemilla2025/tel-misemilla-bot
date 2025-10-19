@@ -265,7 +265,7 @@ bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
         "🔹 **Paso 1:** Abre Telegram y ve a **Ajustes → Ninguno → Nombre de usuario**.\n" +
         "Crea un nombre único (por ejemplo: `TuNombre2025`).\n\n" +
         "🔹 **Paso 2:** Vuelve a este chat y usa el comando:\n" +
-        "`/restaurar usuario_telegram y envia el nuevo usuario que creaste por ejemplo @TuNombre2025`\n\n" +
+        "`/restaurar y envia el nuevo usuario que creaste por ejemplo @TuNombre2025`\n\n" +
         "Así quedará vinculado tu usuario y podrás usar `/misdatos` para ver tu información.",
         { parse_mode: "Markdown" }
       );
