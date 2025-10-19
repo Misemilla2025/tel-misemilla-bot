@@ -737,6 +737,24 @@ bot.on("message", async (msg) => {
     "• /restaurar → Recuperar tu cuenta"
   );
 });
+
+// ===================== LIMPIEZA AUTOMÁTICA DE ARCHIVO DE RESTAURACIÓN =====================
+const CHECK_INTERVAL = 10 * 60 * 1000; // 10 minutos
+setInterval(() => {
+  try {
+    if (fs.existsSync(RESTAURAR_STATE)) {
+      const stats = fs.statSync(RESTAURAR_STATE);
+      const age = Date.now() - stats.mtimeMs;
+      if (age > 10 * 60 * 1000) { // más de 10 minutos sin uso
+        fs.unlinkSync(RESTAURAR_STATE);
+        console.log("🧹 Archivo RESTAURAR_STATE eliminado automáticamente por inactividad.");
+      }
+    }
+  } catch (err) {
+    console.error("⚠️ Error durante la limpieza automática:", err);
+  }
+}, CHECK_INTERVAL);
+
 // =============== [10] Confirmación de arranque ===============
 bot.getMe()
   .then(info => console.log(`✅ Bot conectado como: @${info.username}`))
