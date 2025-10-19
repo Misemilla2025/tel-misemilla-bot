@@ -286,7 +286,7 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ======================= LÓGICA FUNCIONAL /MISDATOS =======================
+// ======================= LÓGICA SEGURA /MISDATOS =======================
 bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
   const chatId = msg.chat.id.toString();
   const entrada = match[1]?.trim();
@@ -295,17 +295,15 @@ bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // 1️⃣ Prioridades de búsqueda
-    let filtros = [];
-    if (username) filtros.push(`usuario_telegram.eq.${username}`);
-    if (entrada && /^\d+$/.test(entrada)) filtros.push(`celular.eq.${entrada}`);
-    filtros.push(`chat_id.eq.${chatId}`);
-
-    // 2️⃣ Consulta Supabase
+    // 1️⃣ Buscar registro por número, usuario o chat_id
     const { data, error } = await supabase
       .from("registros_miembros")
       .select("*")
-      .or(filtros.join(","))
+      .or([
+        entrada && /^\d+$/.test(entrada) ? `celular.eq.${entrada}` : null,
+        username ? `usuario_telegram.eq.${username}` : null,
+        `chat_id.eq.${chatId}`
+      ].filter(Boolean).join(","))
       .limit(1)
       .maybeSingle();
 
@@ -315,16 +313,34 @@ bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
       return;
     }
 
-    // 3️⃣ Si encontró registro pero aún no tiene chat_id, lo guarda
+    // 2️⃣ Validar coincidencia real
+    const tieneUsuarioTg = !!data.usuario_telegram;
+    const coincideUsuario = username && data.usuario_telegram?.toLowerCase() === username.toLowerCase();
+    const coincideChat = data.chat_id?.toString() === chatId;
+    const coincideCel = entrada && data.celular?.replace(/\D/g, "") === entrada.replace(/\D/g, "");
+
+    if (tieneUsuarioTg && !coincideUsuario) {
+      await bot.sendMessage(chatId, "🚫 Este registro está vinculado a otro usuario de Telegram.");
+      console.log(`❌ Consulta bloqueada: chatId ${chatId} no coincide con ${data.usuario_telegram}`);
+      return;
+    }
+
+    if (!tieneUsuarioTg && !(coincideChat || coincideCel)) {
+      await bot.sendMessage(chatId, "⚠️ No se encontró coincidencia exacta con tu cuenta o número.");
+      console.log(`⚠️ Consulta rechazada sin usuario Telegram — chatId ${chatId}`);
+      return;
+    }
+
+    // 3️⃣ Si no tenía chat_id, lo guarda para futuras coincidencias
     if (!data.chat_id) {
       await supabase
         .from("registros_miembros")
         .update({ chat_id: chatId })
         .eq("id", data.id);
-      console.log(`✅ chat_id ${chatId} actualizado para el registro ID ${data.id}`);
+      console.log(`✅ chat_id ${chatId} vinculado a ID ${data.id}`);
     }
 
-    // 4️⃣ Llamar a tu función que ya arma la tabla visual
+    // 4️⃣ Mostrar ficha (usa tu bloque visual actual)
     await enviarFichaDatos(chatId, data);
 
   } catch (err) {
