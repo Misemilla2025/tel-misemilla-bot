@@ -286,7 +286,7 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ======================= COMANDO /MISDATOS =======================
+// ======================= LÓGICA FUNCIONAL /MISDATOS =======================
 bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
   const chatId = msg.chat.id.toString();
   const entrada = match[1]?.trim();
@@ -295,19 +295,13 @@ bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // --- 1️⃣ Preparar búsqueda principal ---
+    // 1️⃣ Prioridades de búsqueda
     let filtros = [];
-
-    // Si tiene username, prioridad alta
     if (username) filtros.push(`usuario_telegram.eq.${username}`);
-
-    // Si ingresó manualmente un número, lo usa como referencia directa
     if (entrada && /^\d+$/.test(entrada)) filtros.push(`celular.eq.${entrada}`);
-
-    // Fallback si tiene chat_id guardado
     filtros.push(`chat_id.eq.${chatId}`);
 
-    // --- 2️⃣ Ejecutar búsqueda ---
+    // 2️⃣ Consulta Supabase
     const { data, error } = await supabase
       .from("registros_miembros")
       .select("*")
@@ -316,39 +310,29 @@ bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
       .maybeSingle();
 
     if (error) throw error;
-
-    // --- 3️⃣ Validar resultados ---
     if (!data) {
       await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
       return;
     }
 
-    // --- 4️⃣ Armar la respuesta ---
-    const f = (v) => v && v !== "null" ? v : "—";
-    const fecha = new Date().toLocaleDateString("es-CO");
+    // 3️⃣ Si encontró registro pero aún no tiene chat_id, lo guarda
+    if (!data.chat_id) {
+      await supabase
+        .from("registros_miembros")
+        .update({ chat_id: chatId })
+        .eq("id", data.id);
+      console.log(`✅ chat_id ${chatId} actualizado para el registro ID ${data.id}`);
+    }
 
-    let info = `🪪 *Tus datos registrados:*\n\n`;
-    info += `👤 *Nombre:* ${f(data.nombre_completo)}\n`;
-    info += `📄 *Documento:* ${f(data.documento)}\n`;
-    info += `📧 *Email:* ${f(data.email)}\n`;
-    info += `📱 *Celular:* ${f(data.celular)}\n`;
-    info += `💬 *Usuario Telegram:* ${f(data.usuario_telegram)}\n`;
-    info += `🆔 *Chat ID:* ${chatId}\n`;
-    info += `\n📅 *Consulta realizada el* ${fecha}\n\n`;
-    info += `🤝 *REFERENCIAS:*\n`;
-    info += `• Nombre Ref.: ${f(data.nombre_referencia)}\n`;
-    info += `• Telegram Ref.: ${f(data.referencia_telegram)}\n`;
-    info += `• WhatsApp Ref.: ${f(data.referencia_whatsapp)}\n\n`;
-    info += `🧾 Para actualizar tus datos usa:\n/actualizacion campo valor\n`;
-    info += `📘 Para conocer los nombres de los campos usa:\n/glosario`;
-
-    await bot.sendMessage(chatId, info, { parse_mode: "Markdown" });
+    // 4️⃣ Llamar a tu función que ya arma la tabla visual
+    await enviarFichaDatos(chatId, data);
 
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
     await bot.sendMessage(chatId, "⚠️ Error al consultar tus datos. Intenta nuevamente.");
   }
 });
+
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
