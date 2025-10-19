@@ -286,68 +286,65 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ======================= LÓGICA SEGURA /MISDATOS =======================
+// ======================= /MISDATOS — versión definitiva =======================
 bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
   const chatId = msg.chat.id.toString();
-  const entrada = match[1]?.trim();
   const username = msg.from.username ? '@' + msg.from.username.toLowerCase() : null;
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // 1️⃣ Buscar registro por número, usuario o chat_id
+    // 🔸 Caso 1: No tiene nombre de usuario en Telegram
+    if (!username) {
+      await bot.sendMessage(
+        chatId,
+        "⚠️ No tienes un *nombre de usuario* en Telegram.\n\n" +
+        "Para poder consultar tus datos debes crear uno y registrarlo en tu tabla.\n\n" +
+        "🔹 **Paso 1:** Abre Telegram y ve a **Ajustes → Editar perfil → Nombre de usuario**.\n" +
+        "Crea un nombre único (por ejemplo: `@TuNombre2025`).\n\n" +
+        "🔹 **Paso 2:** Vuelve a este chat y usa el comando:\n" +
+        "`/actualizacion usuario_telegram @TuNombre2025`\n\n" +
+        "Así quedará vinculado tu usuario y podrás usar `/misdatos` para ver tu información.",
+        { parse_mode: "Markdown" }
+      );
+      console.log(`⚠️ Usuario sin username intentó acceder (${chatId})`);
+      return;
+    }
+
+    // 🔸 Buscar registro por usuario de Telegram
     const { data, error } = await supabase
       .from("registros_miembros")
       .select("*")
-      .or([
-        entrada && /^\d+$/.test(entrada) ? `celular.eq.${entrada}` : null,
-        username ? `usuario_telegram.eq.${username}` : null,
-        `chat_id.eq.${chatId}`
-      ].filter(Boolean).join(","))
-      .limit(1)
+      .eq("usuario_telegram", username)
       .maybeSingle();
 
     if (error) throw error;
+
+    // 🔸 Caso 2: No hay registro vinculado al usuario
     if (!data) {
-      await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
+      await bot.sendMessage(
+        chatId,
+        "⚠️ No se encontró ningún registro vinculado a tu usuario " + username + ".\n\n" +
+        "Si ya te registraste pero usaste tu número de celular en el formulario, " +
+        "usa el comando:\n" +
+        "`/actualizacion usuario_telegram " + username + "`\n\n" +
+        "para actualizar tu registro y vincular tu usuario correctamente.",
+        { parse_mode: "Markdown" }
+      );
+      console.log(`❌ No se encontró registro para ${username}`);
       return;
     }
 
-    // 2️⃣ Validar coincidencia real
-    const tieneUsuarioTg = !!data.usuario_telegram;
-    const coincideUsuario = username && data.usuario_telegram?.toLowerCase() === username.toLowerCase();
-    const coincideChat = data.chat_id?.toString() === chatId;
-    const coincideCel = entrada && data.celular?.replace(/\D/g, "") === entrada.replace(/\D/g, "");
-
-    if (tieneUsuarioTg && !coincideUsuario) {
-      await bot.sendMessage(chatId, "🚫 Este registro está vinculado a otro usuario de Telegram.");
-      console.log(`❌ Consulta bloqueada: chatId ${chatId} no coincide con ${data.usuario_telegram}`);
-      return;
-    }
-
-    if (!tieneUsuarioTg && !(coincideChat || coincideCel)) {
-      await bot.sendMessage(chatId, "⚠️ No se encontró coincidencia exacta con tu cuenta o número.");
-      console.log(`⚠️ Consulta rechazada sin usuario Telegram — chatId ${chatId}`);
-      return;
-    }
-
-    // 3️⃣ Si no tenía chat_id, lo guarda para futuras coincidencias
-    if (!data.chat_id) {
-      await supabase
-        .from("registros_miembros")
-        .update({ chat_id: chatId })
-        .eq("id", data.id);
-      console.log(`✅ chat_id ${chatId} vinculado a ID ${data.id}`);
-    }
-
-    // 4️⃣ Mostrar ficha (usa tu bloque visual actual)
+    // 🔸 Caso 3: Usuario vinculado correctamente → mostrar ficha
     await enviarFichaDatos(chatId, data);
+    console.log(`✅ Registro devuelto correctamente para ${username}`);
 
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
-    await bot.sendMessage(chatId, "⚠️ Error al consultar tus datos. Intenta nuevamente.");
+    await bot.sendMessage(chatId, "⚠️ Ocurrió un error al consultar tus datos. Intenta nuevamente.");
   }
 });
+
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
