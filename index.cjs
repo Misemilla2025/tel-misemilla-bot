@@ -286,88 +286,67 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ======================= COMANDO /MISDATOS (SEGURIDAD REFORZADA) =======================
-bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const entrada = (match[1] || "").trim();
+// ======================= COMANDO /MISDATOS =======================
+bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
+  const chatId = msg.chat.id.toString();
+  const entrada = match[1]?.trim();
+  const username = msg.from.username ? '@' + msg.from.username.toLowerCase() : null;
 
-  // 👤 Usuario Telegram (si tiene)
-  const tgUsername = msg.from.username
-    ? "@" + msg.from.username.toLowerCase().trim()
-    : null;
-
-  // 🧹 Normalizar números: limpia, quita prefijo y deja últimos 10 dígitos
-  const normalizarNumero = (num = "") => {
-    const limpio = num.toString().replace(/\D/g, "").replace(/^57/, "");
-    return limpio.slice(-10);
-  };
-
-  await bot.sendMessage(chatId, "🔎 Consultando tus datos, por favor espera...");
+  await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    let registro = null;
+    // --- 1️⃣ Preparar búsqueda principal ---
+    let filtros = [];
 
-    // 1️⃣ Buscar por usuario de Telegram si existe
-    if (tgUsername) {
-      const { data, error } = await supabase
-        .from(TABLE)
-        .select("*")
-        .eq("usuario_telegram", tgUsername);
+    // Si tiene username, prioridad alta
+    if (username) filtros.push(`usuario_telegram.eq.${username}`);
 
-      if (error) throw error;
-      if (data && data.length > 0) registro = data[0];
-    }
+    // Si ingresó manualmente un número, lo usa como referencia directa
+    if (entrada && /^\d+$/.test(entrada)) filtros.push(`celular.eq.${entrada}`);
 
-    // 2️⃣ Si no tiene username, validar por número SOLO si está realmente vinculado a él
-    if (!registro) {
-      if (!entrada) {
-        await bot.sendMessage(
-          chatId,
-          "📱 No tienes usuario de Telegram asociado.\nPor seguridad, escribe tu número exacto vinculado así:\n`/misdatos 3126547890`",
-          { parse_mode: "Markdown" }
-        );
-        return;
-      }
+    // Fallback si tiene chat_id guardado
+    filtros.push(`chat_id.eq.${chatId}`);
 
-      const numeroConsulta = normalizarNumero(entrada);
+    // --- 2️⃣ Ejecutar búsqueda ---
+    const { data, error } = await supabase
+      .from("registros_miembros")
+      .select("*")
+      .or(filtros.join(","))
+      .limit(1)
+      .maybeSingle();
 
-      // Buscar ese número exacto en la base
-      const { data, error } = await supabase
-        .from(TABLE)
-        .select("*")
-        .or(`usuario_telegram.eq.${numeroConsulta},celular.eq.${numeroConsulta}`);
+    if (error) throw error;
 
-      if (error) throw error;
-
-      if (!data || data.length === 0) {
-        await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
-        return;
-      }
-
-      // ⚠️ Validar que ese registro esté efectivamente vinculado al mismo chatId
-      const coincide = data.find((r) => r.chat_id && r.chat_id.toString() === chatId.toString());
-
-      if (!coincide) {
-        await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado a tu cuenta actual.");
-        return;
-      }
-
-      registro = coincide;
-    }
-
-    // 3️⃣ Si aún no se encontró nada
-    if (!registro) {
+    // --- 3️⃣ Validar resultados ---
+    if (!data) {
       await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
       return;
     }
 
-    // 4️⃣ Mostrar datos si hay coincidencia válida
-    await new Promise((res) => setTimeout(res, 700));
-    await enviarFichaDatos(chatId, registro);
+    // --- 4️⃣ Armar la respuesta ---
+    const f = (v) => v && v !== "null" ? v : "—";
+    const fecha = new Date().toLocaleDateString("es-CO");
+
+    let info = `🪪 *Tus datos registrados:*\n\n`;
+    info += `👤 *Nombre:* ${f(data.nombre_completo)}\n`;
+    info += `📄 *Documento:* ${f(data.documento)}\n`;
+    info += `📧 *Email:* ${f(data.email)}\n`;
+    info += `📱 *Celular:* ${f(data.celular)}\n`;
+    info += `💬 *Usuario Telegram:* ${f(data.usuario_telegram)}\n`;
+    info += `🆔 *Chat ID:* ${chatId}\n`;
+    info += `\n📅 *Consulta realizada el* ${fecha}\n\n`;
+    info += `🤝 *REFERENCIAS:*\n`;
+    info += `• Nombre Ref.: ${f(data.nombre_referencia)}\n`;
+    info += `• Telegram Ref.: ${f(data.referencia_telegram)}\n`;
+    info += `• WhatsApp Ref.: ${f(data.referencia_whatsapp)}\n\n`;
+    info += `🧾 Para actualizar tus datos usa:\n/actualizacion campo valor\n`;
+    info += `📘 Para conocer los nombres de los campos usa:\n/glosario`;
+
+    await bot.sendMessage(chatId, info, { parse_mode: "Markdown" });
 
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
-    await bot.sendMessage(chatId, "❌ Error al consultar tus datos. Intenta más tarde.");
+    await bot.sendMessage(chatId, "⚠️ Error al consultar tus datos. Intenta nuevamente.");
   }
 });
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
