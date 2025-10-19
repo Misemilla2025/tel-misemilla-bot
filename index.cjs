@@ -640,12 +640,22 @@ Ahora, *¿qué deseas vincular?*
   }
 });
 
-// ================== RESPUESTAS INTELIGENTES ==================
+// ================== RESPUESTAS INTELIGENTES (ajustadas para no interferir con restauración) ==================
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = (msg.text || "").trim().toLowerCase();
 
-  // Ignorar comandos y respuestas de confirmación
+  // ⚠️ 1️⃣ Si hay un proceso de restauración activo, no hacer nada aquí
+  if (fs.existsSync(RESTAURAR_STATE)) {
+    try {
+      const st = JSON.parse(fs.readFileSync(RESTAURAR_STATE, "utf8"));
+      if (st.chatId === chatId) return; // ignorar cualquier mensaje de este usuario durante restauración
+    } catch (e) {
+      console.error("Error al leer RESTAURAR_STATE:", e);
+    }
+  }
+
+  // ⚙️ 2️⃣ Ignorar comandos y respuestas cortas de confirmación
   if (text.startsWith("/")) return;
   if (["sí", "si", "no", "s"].includes(text)) return;
 
@@ -693,12 +703,7 @@ bot.on("message", async (msg) => {
   }
 
   // ====== DESPEDIDAS ======
-  if (
-    text.includes("adiós") ||
-    text.includes("chao") ||
-    text.includes("nos vemos") ||
-    text.includes("hasta luego")
-  ) {
+  if (text.includes("adiós") || text.includes("chao") || text.includes("nos vemos") || text.includes("hasta luego")) {
     await bot.sendMessage(chatId, "👋 ¡Hasta pronto! Que tengas un excelente día 🌿");
     return;
   }
@@ -726,10 +731,10 @@ bot.on("message", async (msg) => {
   await bot.sendMessage(
     chatId,
     "🤔 No entendí tu mensaje, pero puedo ayudarte con:\n\n" +
-      "• /misdatos → Ver tus datos\n" +
-      "• /actualizacion → Modificar información\n" +
-      "• /glosario → Ver los campos disponibles\n" +
-      "• /restaurar → Recuperar tu cuenta"
+    "• /misdatos → Ver tus datos\n" +
+    "• /actualizacion → Modificar información\n" +
+    "• /glosario → Ver los campos disponibles\n" +
+    "• /restaurar → Recuperar tu cuenta"
   );
 });
 // =============== [10] Confirmación de arranque ===============
