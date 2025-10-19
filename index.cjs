@@ -286,110 +286,62 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ======================= /MISDATOS (versión validada por chat_id o usuario) =======================
-bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
+// ======================= LÓGICA SEGURA /MISDATOS =======================
+bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
   const chatId = msg.chat.id.toString();
-  const entrada = (match[1] || "").trim();
-  const tgUsername = msg.from.username ? ("@" + msg.from.username.toLowerCase()) : null;
-  const TABLE = "registros_miembros";
-
-  const limpiarNumero = (n = "") => n.replace(/\D/g, "");
-  const variantes = (n = "") => {
-    const d = limpiarNumero(n);
-    if (!d) return [];
-    if (d.startsWith("57")) return [d, d.slice(2), "+57" + d.slice(2)];
-    if (d.length === 10) return [d, "57" + d, "+57" + d];
-    return [d];
-  };
+  const entrada = match[1]?.trim();
+  const username = msg.from.username ? '@' + msg.from.username.toLowerCase() : null;
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    let registro = null;
-    let modo = "❌ Sin coincidencia";
+    // 1️⃣ Buscar registro por número, usuario o chat_id
+    const { data, error } = await supabase
+      .from("registros_miembros")
+      .select("*")
+      .or([
+        entrada && /^\d+$/.test(entrada) ? `celular.eq.${entrada}` : null,
+        username ? `usuario_telegram.eq.${username}` : null,
+        `chat_id.eq.${chatId}`
+      ].filter(Boolean).join(","))
+      .limit(1)
+      .maybeSingle();
 
-    // 1️⃣ Buscar primero por chat_id
-    const chatQuery = await supabase.from(TABLE).select("*").eq("chat_id", chatId).maybeSingle();
-    if (chatQuery.data) {
-      registro = chatQuery.data;
-      modo = "✅ Coincidencia por chat_id";
-    }
-
-    // 2️⃣ Si no hay coincidencia, buscar por usuario Telegram
-    if (!registro && tgUsername) {
-      const userQuery = await supabase.from(TABLE).select("*").eq("usuario_telegram", tgUsername).maybeSingle();
-      if (userQuery.data) {
-        registro = userQuery.data;
-        modo = "✅ Coincidencia por usuario_telegram";
-      }
-    }
-
-    // 3️⃣ Si tampoco, buscar por número de celular si se envió
-    if (!registro && entrada) {
-      const ors = variantes(entrada).map(v => `celular.eq.${v}`).join(",");
-      if (ors) {
-        const numQuery = await supabase.from(TABLE).select("*").or(ors).limit(1);
-        if (numQuery.data && numQuery.data.length) {
-          registro = numQuery.data[0];
-          modo = "✅ Coincidencia por número celular";
-        }
-      }
-    }
-
-    // 4️⃣ Si no hay coincidencia
-    if (!registro) {
-      console.log(`❌ No se encontró coincidencia para chatId ${chatId}`);
+    if (error) throw error;
+    if (!data) {
       await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
       return;
     }
 
-    // 5️⃣ Validaciones seguras (versión corregida)
-    const tieneUsuario = registro.usuario_telegram && registro.usuario_telegram.trim() !== "";
-    const coincideUsuario = tgUsername && (registro.usuario_telegram || "").toLowerCase() === tgUsername.toLowerCase();
-    const coincideChat = registro.chat_id && registro.chat_id.toString() === chatId;
+    // 2️⃣ Validar coincidencia real
+    const tieneUsuarioTg = !!data.usuario_telegram;
+    const coincideUsuario = username && data.usuario_telegram?.toLowerCase() === username.toLowerCase();
+    const coincideChat = data.chat_id?.toString() === chatId;
+    const coincideCel = entrada && data.celular?.replace(/\D/g, "") === entrada.replace(/\D/g, "");
 
-    // 🟡 CASO 1: tiene usuario_telegram y NO coincide
-    if (tieneUsuario && !coincideUsuario) {
-      // ✅ Permitir si coincide chat_id aunque no tenga username en Telegram
-      if (coincideChat && !tgUsername) {
-        console.log(`🟢 Aceptado sin username (match chat_id ${chatId})`);
-      } else {
-        console.log(`🚫 Bloqueado: registro pertenece a ${registro.usuario_telegram}, chat actual ${tgUsername || "sin usuario"}`);
-        await bot.sendMessage(chatId, `🚫 Registro pertenece a ${registro.usuario_telegram || "(sin dato)"} — tu usuario: ${tgUsername || "(sin usuario)"}`);
-        return;
-      }
+    if (tieneUsuarioTg && !coincideUsuario) {
+      await bot.sendMessage(chatId, "🚫 Este registro está vinculado a otro usuario de Telegram.");
+      console.log(`❌ Consulta bloqueada: chatId ${chatId} no coincide con ${data.usuario_telegram}`);
+      return;
     }
 
-    // 🟡 CASO 2: no tiene usuario_telegram → permitir si coincide chat_id o número
-    if (!tieneUsuario) {
-      let ok = false;
-      if (coincideChat) ok = true;
-
-      if (!ok && entrada) {
-        const cel = limpiarNumero(registro.celular || "");
-        const ent = limpiarNumero(entrada);
-        ok = variantes(cel).includes(ent) || variantes(ent).includes(cel);
-      }
-
-      if (!ok) {
-        console.log(`⚠️ Bloqueado: sin usuario Telegram y sin coincidencia válida`);
-        await bot.sendMessage(chatId, "⚠️ Sin coincidencia válida con tu cuenta o número.");
-        return;
-      }
+    if (!tieneUsuarioTg && !(coincideChat || coincideCel)) {
+      await bot.sendMessage(chatId, "⚠️ No se encontró coincidencia exacta con tu cuenta o número.");
+      console.log(`⚠️ Consulta rechazada sin usuario Telegram — chatId ${chatId}`);
+      return;
     }
 
-    // 6️⃣ Guardar chat_id si no está en la tabla
-    if (!registro.chat_id) {
-      await supabase.from(TABLE).update({ chat_id: chatId }).eq("id", registro.id);
-      console.log(`💾 chat_id ${chatId} guardado en registro ID ${registro.id}`);
-    } else {
-      console.log(`🔹 Usuario ya tiene chat_id registrado (${registro.chat_id})`);
+    // 3️⃣ Si no tenía chat_id, lo guarda para futuras coincidencias
+    if (!data.chat_id) {
+      await supabase
+        .from("registros_miembros")
+        .update({ chat_id: chatId })
+        .eq("id", data.id);
+      console.log(`✅ chat_id ${chatId} vinculado a ID ${data.id}`);
     }
 
-    // 7️⃣ Mostrar los datos
-    console.log(`📗 Registro devuelto (${modo}) → ID ${registro.id}`);
-    await bot.sendMessage(chatId, `✅ *Coincidencia confirmada:* ${modo}`, { parse_mode: "Markdown" });
-    await enviarFichaDatos(chatId, registro);
+    // 4️⃣ Mostrar ficha (usa tu bloque visual actual)
+    await enviarFichaDatos(chatId, data);
 
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
