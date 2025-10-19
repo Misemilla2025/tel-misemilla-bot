@@ -147,6 +147,34 @@ const MISDATOS_STATE  = "misdatos_tg.json";
 const PENDIENTE_STATE = "pendiente_tg.json";
 const RESTAURAR_STATE = "restaurar_tg.json";
 
+// ======================= BLOQUE DE PRUEBA CHAT_ID (SOLO LECTURA) =======================
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const tgUser = msg.from.username ? "@" + msg.from.username.toLowerCase() : null;
+
+  // Normaliza número si el mensaje parece contenerlo
+  const numero = msg.text ? msg.text.replace(/\D/g, "") : null;
+
+  try {
+    const { data, error } = await supabase
+      .from("registros_miembros")
+      .select("id, chat_id, usuario_telegram, celular")
+      .or(`usuario_telegram.eq.${tgUser},celular.eq.${numero}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      console.log(`❌ No se encontró coincidencia para chatId ${chatId}`);
+      return;
+    }
+
+    console.log(`✅ Coincidencia detectada: ID ${data.id} | usuario_telegram=${data.usuario_telegram} | celular=${data.celular} | chat_id=${data.chat_id}`);
+  } catch (err) {
+    console.error("⚠️ Error en prueba de chat_id:", err);
+  }
+});
+
 // =============== [5] Comandos base ===============
 
 // /start
