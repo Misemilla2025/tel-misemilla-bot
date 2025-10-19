@@ -147,44 +147,6 @@ const MISDATOS_STATE  = "misdatos_tg.json";
 const PENDIENTE_STATE = "pendiente_tg.json";
 const RESTAURAR_STATE = "restaurar_tg.json";
 
-// ======================= BLOQUE DE CHAT_ID AUTOMÁTICO =======================
-bot.on("message", async (msg) => {
-  const chatId = msg.chat.id.toString();
-  const tgUser = msg.from.username ? "@" + msg.from.username.toLowerCase() : null;
-  const texto = msg.text ? msg.text.trim() : "";
-  const numero = texto.replace(/\D/g, ""); // Limpia y deja solo números
-
-  try {
-    // Buscar coincidencia por usuario_telegram o número celular
-    const { data, error } = await supabase
-      .from("registros_miembros")
-      .select("id, chat_id, usuario_telegram, celular")
-      .or(`usuario_telegram.eq.${tgUser},celular.eq.${numero}`)
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    if (!data) {
-      console.log(`❌ No se encontró coincidencia para chatId ${chatId}`);
-      return;
-    }
-
-    // Si encuentra coincidencia pero aún no tiene chat_id → lo guarda
-    if (!data.chat_id) {
-      await supabase
-        .from("registros_miembros")
-        .update({ chat_id: chatId })
-        .eq("id", data.id);
-
-      console.log(`✅ chat_id ${chatId} guardado para el registro ID ${data.id}`);
-    } else {
-      console.log(`🔹 Usuario ya tiene chat_id registrado (${data.chat_id})`);
-    }
-  } catch (err) {
-    console.error("⚠️ Error en gestión de chat_id:", err);
-  }
-});
 
 // =============== [5] Comandos base ===============
 
@@ -300,10 +262,10 @@ bot.onText(/^\/misdatos(?:\s+(\S+))?/, async (msg, match) => {
         chatId,
         "⚠️ No tienes un *nombre de usuario* en Telegram.\n\n" +
         "Para poder consultar tus datos debes crear uno y registrarlo en tu tabla.\n\n" +
-        "🔹 **Paso 1:** Abre Telegram y ve a **Ajustes → Editar perfil → Nombre de usuario**.\n" +
-        "Crea un nombre único (por ejemplo: `@TuNombre2025`).\n\n" +
+        "🔹 **Paso 1:** Abre Telegram y ve a **Ajustes → Ninguno → Nombre de usuario**.\n" +
+        "Crea un nombre único (por ejemplo: `TuNombre2025`).\n\n" +
         "🔹 **Paso 2:** Vuelve a este chat y usa el comando:\n" +
-        "`/actualizacion usuario_telegram @TuNombre2025`\n\n" +
+        "`/restaurar usuario_telegram y envia el nuevo usuario que creaste por ejemplo @TuNombre2025`\n\n" +
         "Así quedará vinculado tu usuario y podrás usar `/misdatos` para ver tu información.",
         { parse_mode: "Markdown" }
       );
