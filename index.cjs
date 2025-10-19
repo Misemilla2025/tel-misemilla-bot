@@ -248,27 +248,29 @@ bot.onText(/\/glosario/i, async (msg) => {
 });
 
 // ======================= COMANDO /MISDATOS =======================
-bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
+bot.onText(/^\/misdatos$/, async (msg) => {
   const chatId = msg.chat.id;
-  const arg = (match[1] || "").trim();
 
-  // 🧹 Normalizar número: eliminar todo excepto dígitos y dejar los últimos 10
-  const normalizarNumero = (num = "") => {
-    const limpio = num.replace(/\D/g, "");
-    return limpio.length > 10 ? limpio.slice(-10) : limpio; // últimos 10 dígitos
-  };
-
-  // 👤 Usuario Telegram si existe
+  // 👤 Usuario Telegram (si tiene)
   const tgUsername = msg.from.username
-    ? "@" + msg.from.username.toLowerCase()
+    ? "@" + msg.from.username.toLowerCase().trim()
     : null;
 
-  await bot.sendMessage(chatId, "🔎 Consultando tus datos, por favor espera...");
+  // 🧹 Normalizar números para comparación
+  const limpiarNumero = (num = "") => {
+    return num
+      .toString()
+      .replace(/\D/g, "")       // elimina todo excepto dígitos
+      .replace(/^57/, "")       // quita prefijo 57 si existe
+      .slice(-10);              // deja últimos 10 dígitos
+  };
+
+  await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
     let registro = null;
 
-    // 1️⃣ Buscar por usuario de Telegram si lo tiene
+    // 1️⃣ Si el usuario tiene @usuario de Telegram
     if (tgUsername) {
       const { data, error } = await supabase
         .from(TABLE)
@@ -279,31 +281,31 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
       if (data && data.length > 0) registro = data[0];
     }
 
-    // 2️⃣ Buscar por número si no encontró usuario
+    // 2️⃣ Si no tiene usuario, intentamos con número (en el campo usuario_telegram)
     if (!registro) {
-      const numeroConsulta = arg || msg.from.id.toString();
-      const numero = normalizarNumero(numeroConsulta);
+      // Tomamos el número del chat si no hay username
+      const posibleNumero = msg.from.phone_number || msg.from.id.toString();
+      const miNumero = limpiarNumero(posibleNumero);
 
+      // Traemos todos los registros y buscamos coincidencia flexible
       const { data, error } = await supabase.from(TABLE).select("*");
       if (error) throw error;
 
       registro = data.find((r) => {
         if (!r.usuario_telegram) return false;
-
-        // Normaliza lo guardado también
-        const guardado = normalizarNumero(r.usuario_telegram);
-        return guardado && guardado === numero;
+        const guardado = limpiarNumero(r.usuario_telegram);
+        return guardado && guardado === miNumero;
       });
     }
 
-    // 3️⃣ Si no se encontró nada
+    // 3️⃣ Si no se encuentra ningún registro
     if (!registro) {
       await bot.sendMessage(chatId, "⚠️ No se encontró ningún registro asociado.");
       return;
     }
 
-    // 4️⃣ Mostrar datos si hay coincidencia
-    await new Promise((res) => setTimeout(res, 700));
+    // 4️⃣ Si hay coincidencia, mostrar datos
+    await new Promise((res) => setTimeout(res, 800));
     await enviarFichaDatos(chatId, registro);
 
   } catch (err) {
