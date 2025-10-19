@@ -147,15 +147,15 @@ const MISDATOS_STATE  = "misdatos_tg.json";
 const PENDIENTE_STATE = "pendiente_tg.json";
 const RESTAURAR_STATE = "restaurar_tg.json";
 
-// ======================= BLOQUE DE PRUEBA CHAT_ID (SOLO LECTURA) =======================
+// ======================= BLOQUE DE CHAT_ID AUTOMÁTICO =======================
 bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
+  const chatId = msg.chat.id.toString();
   const tgUser = msg.from.username ? "@" + msg.from.username.toLowerCase() : null;
-
-  // Normaliza número si el mensaje parece contenerlo
-  const numero = msg.text ? msg.text.replace(/\D/g, "") : null;
+  const texto = msg.text ? msg.text.trim() : "";
+  const numero = texto.replace(/\D/g, ""); // Limpia y deja solo números
 
   try {
+    // Buscar coincidencia por usuario_telegram o número celular
     const { data, error } = await supabase
       .from("registros_miembros")
       .select("id, chat_id, usuario_telegram, celular")
@@ -164,14 +164,25 @@ bot.on("message", async (msg) => {
       .maybeSingle();
 
     if (error) throw error;
+
     if (!data) {
       console.log(`❌ No se encontró coincidencia para chatId ${chatId}`);
       return;
     }
 
-    console.log(`✅ Coincidencia detectada: ID ${data.id} | usuario_telegram=${data.usuario_telegram} | celular=${data.celular} | chat_id=${data.chat_id}`);
+    // Si encuentra coincidencia pero aún no tiene chat_id → lo guarda
+    if (!data.chat_id) {
+      await supabase
+        .from("registros_miembros")
+        .update({ chat_id: chatId })
+        .eq("id", data.id);
+
+      console.log(`✅ chat_id ${chatId} guardado para el registro ID ${data.id}`);
+    } else {
+      console.log(`🔹 Usuario ya tiene chat_id registrado (${data.chat_id})`);
+    }
   } catch (err) {
-    console.error("⚠️ Error en prueba de chat_id:", err);
+    console.error("⚠️ Error en gestión de chat_id:", err);
   }
 });
 
