@@ -286,7 +286,7 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
 });
 
-// ======================= /MISDATOS (depuración visible) =======================
+// ======================= /MISDATOS (versión validada por chat_id o usuario) =======================
 bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id.toString();
   const entrada = (match[1] || "").trim();
@@ -343,19 +343,24 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
       return;
     }
 
-    // 5️⃣ Validaciones seguras
+    // 5️⃣ Validaciones seguras (versión corregida)
     const tieneUsuario = registro.usuario_telegram && registro.usuario_telegram.trim() !== "";
     const coincideUsuario = tgUsername && (registro.usuario_telegram || "").toLowerCase() === tgUsername.toLowerCase();
     const coincideChat = registro.chat_id && registro.chat_id.toString() === chatId;
 
-    // ✅ Si tiene usuario Telegram → debe coincidir
+    // 🟡 CASO 1: tiene usuario_telegram y NO coincide
     if (tieneUsuario && !coincideUsuario) {
-      console.log(`🚫 Bloqueado: registro pertenece a ${registro.usuario_telegram}, chat actual ${tgUsername || "sin usuario"}`);
-      await bot.sendMessage(chatId, `🚫 Registro pertenece a ${registro.usuario_telegram || "(sin dato)"} — tu usuario: ${tgUsername || "(sin usuario)"}`);
-      return;
+      // ✅ Permitir si coincide chat_id aunque no tenga username en Telegram
+      if (coincideChat && !tgUsername) {
+        console.log(`🟢 Aceptado sin username (match chat_id ${chatId})`);
+      } else {
+        console.log(`🚫 Bloqueado: registro pertenece a ${registro.usuario_telegram}, chat actual ${tgUsername || "sin usuario"}`);
+        await bot.sendMessage(chatId, `🚫 Registro pertenece a ${registro.usuario_telegram || "(sin dato)"} — tu usuario: ${tgUsername || "(sin usuario)"}`);
+        return;
+      }
     }
 
-    // ✅ Si NO tiene usuario Telegram → permitir si coincide chat_id o número
+    // 🟡 CASO 2: no tiene usuario_telegram → permitir si coincide chat_id o número
     if (!tieneUsuario) {
       let ok = false;
       if (coincideChat) ok = true;
@@ -381,7 +386,7 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
       console.log(`🔹 Usuario ya tiene chat_id registrado (${registro.chat_id})`);
     }
 
-    // 7️⃣ Mostrar los datos y método
+    // 7️⃣ Mostrar los datos
     console.log(`📗 Registro devuelto (${modo}) → ID ${registro.id}`);
     await bot.sendMessage(chatId, `✅ *Coincidencia confirmada:* ${modo}`, { parse_mode: "Markdown" });
     await enviarFichaDatos(chatId, registro);
@@ -391,7 +396,6 @@ bot.onText(/^\/misdatos(?:\s+(.+))?$/, async (msg, match) => {
     await bot.sendMessage(chatId, "⚠️ Error al consultar tus datos. Intenta nuevamente.");
   }
 });
-
 // ======================= FUNCIÓN DE ENVÍO DE DATOS =======================
 async function enviarFichaDatos(chatId, r) {
   let texto = "📋 *TUS DATOS REGISTRADOS*\n\n";
