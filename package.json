@@ -1,17 +1,23 @@
 {
-  "name": "tel-misemilla-bot",
+  "name": "bot-whatsapp-misemilla",
   "version": "1.0.0",
-  "description": "Bot Mi Semilla con integración Telegram + Supabase (modo webhook + polling).",
-  "main": "index.cjs",
+  "description": "Bot WhatsApp Mi Semilla con blindaje total, actualización sensible/no sensible y reintento Supabase.",
+  "main": "index.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "node index.cjs"
-  },
-  "engines": {
-    "node": ">=18.x"
+    "start": "node index.js"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.8",
     "@supabase/supabase-js": "^2.44.4",
-    "express": "^4.18.2",
-    "node-telegram-bot-api": "^0.66.0"
-  }
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "Total Business",
+  "license": "MIT"
 }
