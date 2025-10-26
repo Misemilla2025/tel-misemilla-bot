@@ -227,7 +227,7 @@ async function iniciarBot() {
     }
   });
   
-  // === Guardar sesión también en Supabase ===
+// === Guardar sesión también en Supabase ===
 sock.ev.on('creds.update', async () => {
   try {
     await saveCreds();
@@ -254,7 +254,7 @@ sock.ev.on('creds.update', async () => {
     if (error) throw error;
     console.log("💾 Sesión guardada correctamente en Supabase ✅");
   } catch (err) {
-    console.error("⚠️ Error guardando sesión Supabase:", err);
+    console.error("⚠️ Error guardando sesión Supabase:", err.message || err);
   }
 });
 
@@ -579,50 +579,93 @@ sock.ev.on('creds.update', async () => {
           }
         }
 
-        // ====== /restaurar (permite uso desde otro dispositivo) ======
-        if (lower.startsWith('/restaurar')) {
-          escribirJSON(RESTAURAR_FILE, { estado: 'pedir_id', who: numero });
-          await enviar(sock, from, '🔧 *Restauración de cuenta*\nEnvía tu *documento* o *email* para buscar tu registro.');
-          continue;
-        }
-        const rest = leerJSON(RESTAURAR_FILE);
-        if (rest?.estado === 'pedir_id' && rest?.who === numero && !lower.startsWith('/')) {
-          const v = texto.trim();
-          const isEmail = /\S+@\S+\.\S+/.test(v);
-          const isDoc   = /^\d{5,}$/.test(v.replace(/\D/g, ''));
-          if (!isEmail && !isDoc) { await enviar(sock, from, '❌ Envía un email válido o documento.'); continue; }
-          let q = supabase.from(TABLE).select('*').limit(1);
-          if (isEmail) q = q.eq('email', v.toLowerCase());
-          else q = q.eq('documento', v.replace(/\D/g, ''));
-          let foundR = null;
-          try {
-            const rr = await safeQuery(() => q.maybeSingle(), 'rest.buscar');
-            foundR = rr?.data || null;
-          } catch {}
-          if (!foundR) { await enviar(sock, from, '❌ No encontré registro.'); borrar(RESTAURAR_FILE); continue; }
-          escribirJSON(RESTAURAR_FILE, { estado: 'pedir_nuevo_cel', id: foundR.id, who: numero });
-          await enviar(sock, from, '📱 Envía tu *nuevo número de celular* (57 + dígitos) para actualizar tu registro.');
-          continue;
-        }
-        if (rest?.estado === 'pedir_nuevo_cel' && rest?.who === numero && !lower.startsWith('/')) {
-          const nuevoCel = normalizarColombia(texto);
-          if (!/^\d{11,12}$/.test(nuevoCel)) { await enviar(sock, from, '❌ Número inválido.'); continue; }
-          try {
-            // Al restaurar: actualizamos celular y limpiamos whatsapp_id para que se vincule en el próximo /misdatos
-            const { error: errU } = await safeQuery(() => supabase.from(TABLE).update({ celular: nuevoCel, whatsapp_id: null }).eq('id', rest.id), 'rest.actualizar');
-            if (errU) {
-              if (errU.code === '23505' || (errU.message && errU.message.toLowerCase().includes('duplicate key'))) {
-                await enviar(sock, from, '🚫 El número ingresado ya pertenece a otra cuenta.\nSi cambiaste de dispositivo, usa el comando */restaurar* desde tu nuevo WhatsApp para recuperar el acceso.');
-              } else {
-                await enviar(sock, from, '⚠️ Error temporal al guardar. Intenta más tarde.');
-              }
-            }
-            else      { await enviar(sock, from, '✅ Tu número fue actualizado. Ahora, desde tu nuevo WhatsApp, usa */misdatos* para vincular la cuenta.'); }
-          } catch (_) {
-            await enviar(sock, from, '⚠️ No fue posible completar la restauración. Intenta más tarde.');
-          }
-          borrar(RESTAURAR_FILE); continue;
-        }
+// ====== /restaurar (permite uso desde otro dispositivo) ======
+if (lower.startsWith('/restaurar')) {
+  borrar(RESTAURAR_FILE); // limpia restos anteriores
+  escribirJSON(RESTAURAR_FILE, { estado: 'pedir_id', who: numero });
+  await enviar(sock, from, '🔧 *Restauración de cuenta*\nEnvía tu *documento* o *email* para buscar tu registro.');
+  continue;
+}
+
+const rest = leerJSON(RESTAURAR_FILE);
+
+// === Paso 1: buscar usuario por documento o email ===
+if (rest?.estado === 'pedir_id' && rest?.who === numero && !lower.startsWith('/')) {
+  const v = texto.trim();
+  const isEmail = /\S+@\S+\.\S+/.test(v);
+  const isDoc = /^\d{5,}$/.test(v.replace(/\D/g, ''));
+  if (!isEmail && !isDoc) {
+    await enviar(sock, from, '❌ Envía un email válido o documento.');
+    continue;
+  }
+
+  let q = supabase.from(TABLE).select('*').limit(1);
+  if (isEmail) q = q.eq('email', v.toLowerCase());
+  else q = q.eq('documento', v.replace(/\D/g, ''));
+
+  try {
+    const rr = await safeQuery(() => q.maybeSingle(), 'rest.buscar');
+    const foundR = rr?.data || null;
+
+    if (!foundR) {
+      await enviar(sock, from, '❌ No encontré registro con esos datos.');
+      borrar(RESTAURAR_FILE);
+      continue;
+    }
+
+    escribirJSON(RESTAURAR_FILE, { estado: 'pedir_nuevo_cel', id: foundR.id, who: numero });
+    await enviar(sock, from, '📱 Envía tu *nuevo número de celular* (57 + dígitos) para actualizar tu registro.');
+  } catch (e) {
+    console.error('⚠️ Error buscando usuario para restaurar:', e.message);
+    await enviar(sock, from, '⚠️ Error al buscar tu registro. Intenta más tarde.');
+    borrar(RESTAURAR_FILE);
+  }
+  continue;
+}
+
+// === Paso 2: recibir nuevo número de celular ===
+if (rest?.estado === 'pedir_nuevo_cel' && rest?.who === numero && !lower.startsWith('/')) {
+  const nuevoCel = normalizarColombia(texto);
+  if (!/^\d{11,12}$/.test(nuevoCel)) {
+    await enviar(sock, from, '❌ Número inválido. Debe tener el formato 57XXXXXXXXXX');
+    continue;
+  }
+
+  try {
+    // Validar que no exista ese número
+    const existe = await safeQuery(
+      () => supabase.from(TABLE).select('id').eq('celular', nuevoCel).maybeSingle(),
+      'rest.verificar'
+    );
+    if (existe?.data) {
+      await enviar(sock, from, '🚫 Ese número ya está registrado en otra cuenta.\nSi cambiaste de dispositivo, usa */restaurar* desde el nuevo WhatsApp.');
+      borrar(RESTAURAR_FILE);
+      continue;
+    }
+
+    // Actualizar número
+    const { error: errU } = await safeQuery(
+      () => supabase.from(TABLE).update({
+        celular: nuevoCel,
+        whatsapp_id: null
+      }).eq('id', rest.id),
+      'rest.actualizar'
+    );
+
+    if (errU) {
+      console.error('⚠️ Error actualizando número:', errU.message);
+      await enviar(sock, from, '⚠️ Error temporal al guardar. Intenta más tarde.');
+    } else {
+      await enviar(sock, from, '✅ Tu número fue actualizado correctamente.\nAhora, desde tu nuevo WhatsApp, usa */misdatos* para vincular la cuenta.');
+    }
+  } catch (e) {
+    console.error('⚠️ Error restaurando número:', e.message);
+    await enviar(sock, from, '⚠️ No fue posible completar la restauración. Intenta más tarde.');
+  }
+
+  borrar(RESTAURAR_FILE);
+  continue;
+}
 
         // ========== RESPUESTAS INTELIGENTES ==========
         const restState = leerJSON(RESTAURAR_FILE);
