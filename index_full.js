@@ -231,6 +231,7 @@ async function iniciarBot() {
 sock.ev.on('creds.update', async () => {
   try {
     await saveCreds();
+    console.log("🟡 Intentando guardar sesión en Supabase...");
 
     const fs = require("fs");
     const path = require("path");
@@ -251,9 +252,9 @@ sock.ev.on('creds.update', async () => {
       });
 
     if (error) throw error;
-    console.log("💾 Sesión guardada correctamente en Supabase");
+    console.log("💾 Sesión guardada correctamente en Supabase ✅");
   } catch (err) {
-    console.error("⚠️ Error guardando sesión Supabase:", err.message);
+    console.error("⚠️ Error guardando sesión Supabase:", err);
   }
 });
 
