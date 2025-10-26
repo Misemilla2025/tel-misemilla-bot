@@ -27,6 +27,36 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6Ik
 const TABLE        = process.env.TABLE || 'registros_miembros';
 const BOT_DISPLAY_NAME = process.env.BOT_DISPLAY_NAME || 'Mi Semilla';
 
+const BOT_DISPLAY_NAME = process.env.BOT_DISPLAY_NAME || 'Mi Semilla';
+
+// === Cargar sesión previa desde Supabase ===
+async function loadSessionFromSupabase() {
+  try {
+    console.log("🟡 Verificando sesión previa en Supabase...");
+    const { data, error } = await supabase
+      .from("sesion_whatsapp")
+      .select("datos")
+      .eq("nombre", "mi_sesion")
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data && data.datos) {
+      const fs = require("fs");
+      const path = require("path");
+      const dir = "./auth_info_full";
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+      for (const [fname, content] of Object.entries(data.datos)) {
+        fs.writeFileSync(path.join(dir, fname), Buffer.from(content, "base64"));
+      }
+      console.log("✅ Sesión restaurada desde Supabase");
+    } else {
+      console.log("ℹ️ No hay sesión previa en Supabase");
+    }
+  } catch (err) {
+    console.error("⚠️ Error cargando sesión Supabase:", err.message);
+  }
+}
+
 // === Directorio de autenticación de WhatsApp (Baileys) ===
 const AUTH_DIR = process.env.AUTH_DIR || './auth_info_full';
 if (!fs.existsSync(AUTH_DIR)) {
@@ -196,7 +226,36 @@ async function iniciarBot() {
       else { console.log('🚫 Sesión cerrada. Borra', AUTH_DIR, 'para relogear.'); }
     }
   });
-  sock.ev.on('creds.update', async () => { await saveCreds(); await saveSessionToSupabase(); });
+  
+  // === Guardar sesión también en Supabase ===
+sock.ev.on('creds.update', async () => {
+  try {
+    await saveCreds();
+
+    const fs = require("fs");
+    const path = require("path");
+    const dir = "./auth_info_full";
+    const files = fs.readdirSync(dir);
+    const dataToSave = {};
+
+    for (const f of files) {
+      dataToSave[f] = fs.readFileSync(path.join(dir, f)).toString("base64");
+    }
+
+    const { error } = await supabase
+      .from("sesion_whatsapp")
+      .upsert({
+        nombre: "mi_sesion",
+        datos: dataToSave,
+        updated_at: new Date().toISOString(),
+      });
+
+    if (error) throw error;
+    console.log("💾 Sesión guardada correctamente en Supabase");
+  } catch (err) {
+    console.error("⚠️ Error guardando sesión Supabase:", err.message);
+  }
+});
 
   // ====== Listener de mensajes ======
   sock.ev.on('messages.upsert', async ({ messages }) => {
@@ -415,7 +474,7 @@ async function iniciarBot() {
           const sameDevice = savedFP &&
             (savedFP.includes(currentFP) || currentFP.includes(savedFP) || savedFP.split("-")[0] === currentFP.split("-")[0]);
           if (savedFP && !sameDevice) {
-            await enviar(sock, from, "🚫 Este dispositivo no está autorizado para actualizar esta cuenta.\nSolo puedes usar */restaurar* para vincular tu cuenta a este nuevo dispositivo.");
+            await enviar(sock, from, "🚫 Este email pertenece a otra cuenta.");
             continue;
           }
 
@@ -455,7 +514,7 @@ async function iniciarBot() {
 
           const actual = (registroActual?.[campo] || '').toString().trim();
           if (actual && nuevo.toUpperCase() === actual.toUpperCase()) {
-            await enviar(sock, from, `⚠️ El campo *${campo}* ya está registrado en tu cuenta.`);
+            await enviar(sock, from, `⚠️ El campo *${campo}* fue actualizado correctamente.`);
             continue;
           }
 
