@@ -465,118 +465,115 @@ sock.ev.on('creds.update', async () => {
           continue;
         }
 
-        // ====== /actualizacion (requiere sesión + blindaje dispositivo) ======
-        if (lower.startsWith('/actualizacion')) {
-          const ses = leerJSON(SESION_FILE);
-          if (!ses?.user_id || ses?.who !== numero) { await enviar(sock, from, '🔒 Primero verifica identidad con */misdatos*.'); continue; }
+// ====== /actualizacion (requiere sesión) ======
+if (lower.startsWith('/actualizacion')) {
+  const ses = leerJSON(SESION_FILE);
+  if (!ses?.user_id || ses?.who !== numero) {
+    await enviar(sock, from, '🔒 Primero verifica identidad con */misdatos*.');
+    continue;
+  }
 
-          // Blindaje de dispositivo para actualización
-          let regUser = null;
-          try {
-            const r = await safeQuery(() => supabase.from(TABLE).select('id, whatsapp_id').eq('id', ses.user_id).maybeSingle(), 'act.leer_user');
-            regUser = r?.data || null;
-          } catch {}
-          const currentFP = fingerprint(m);
-          const savedFP = (regUser?.whatsapp_id || "").toString().trim();
-          const sameDevice = savedFP &&
-            (savedFP.includes(currentFP) || currentFP.includes(savedFP) || savedFP.split("-")[0] === currentFP.split("-")[0]);
-          if (savedFP && !sameDevice) {
-            await enviar(sock, from, "🚫 Este email pertenece a otra cuenta.");
-            continue;
-          }
+  const parts = lower.split(' ').filter(Boolean);
+  if (parts.length < 3) {
+    await enviar(sock, from, '⚠️ Formato: */actualizacion campo valor*\nEj: */actualizacion ciudad Bogotá*');
+    continue;
+  }
 
-          const parts = lower.split(' ').filter(Boolean);
-          if (parts.length < 3) { await enviar(sock, from, '⚠️ Formato: */actualizacion campo valor*\nEj: */actualizacion ciudad Bogotá*'); continue; }
+  const campo = parts[1].trim().toLowerCase();
+  const valorOriginal = texto.split(' ').slice(2).join(' ').trim();
+  if (!valorOriginal) {
+    await enviar(sock, from, '❌ Debes indicar un valor.');
+    continue;
+  }
 
-          const campo = parts[1].trim().toLowerCase();
-          const valorOriginal = texto.split(' ').slice(2).join(' ').trim();
-          if (!valorOriginal) { await enviar(sock, from, '❌ Debes indicar un valor.' ); continue; }
+  const camposValidos = [
+    'nombre_completo','documento','fecha_nacimiento','edad','genero','escolaridad',
+    'email','celular','pais','departamento','ciudad','barrio','direccion',
+    'vivienda_propia','zona','estrato','personas_en_hogar','personas_trabajan',
+    'adultos_mayores','menores','servicios','discapacidad','detalle_discapacidad',
+    'hobbies','emprendimiento','ref_nombre','ref_whatsapp','ref_telegram'
+  ];
 
-          const camposValidos = [
-            'nombre_completo','documento','fecha_nacimiento','edad','genero','escolaridad',
-            'email','celular',
-            'pais','departamento','ciudad','barrio','direccion',
-            'vivienda_propia','zona','estrato','personas_en_hogar','personas_trabajan',
-            'adultos_mayores','menores',
-            'servicios','discapacidad','detalle_discapacidad',
-            'hobbies','emprendimiento','ref_nombre','ref_whatsapp','ref_telegram'
-          ];
-          if (!camposValidos.includes(campo)) { await enviar(sock, from, '❌ Campo inválido. Usa */glosario* para ver la lista de campos.'); continue; }
+  if (!camposValidos.includes(campo)) {
+    await enviar(sock, from, '❌ Campo inválido. Usa */glosario* para ver los válidos.');
+    continue;
+  }
 
-          // Leer valor actual
-          let registroActual = null;
-          try {
-            const { data, error } = await safeQuery(() => supabase.from(TABLE).select(campo).eq('id', ses.user_id).maybeSingle(), 'act.leer_campo');
-            if (error) throw error;
-            registroActual = data;
-          } catch (e) {
-            console.error('⚠️ Error consultando campo:', e?.message || e);
-            await enviar(sock, from, '⚠️ No pude verificar tu información actual. Intenta más tarde.');
-            continue;
-          }
+  // Intento robusto de consulta
+  let registroActual = null;
+  try {
+    const { data, error } = await supabase.from(TABLE).select(campo).eq('id', ses.user_id).maybeSingle();
+    if (error) throw error;
+    registroActual = data;
+  } catch (e) {
+    console.error('⚠️ Error consultando campo:', e.message || e);
+    await enviar(sock, from, '⚠️ No pude verificar tu información actual. Intenta más tarde.');
+    continue;
+  }
 
-          let nuevo = valorOriginal;
-          if (campo !== 'email') nuevo = nuevo.toUpperCase();
-          if (campo === 'celular') nuevo = normalizarColombia(nuevo);
+  let nuevo = valorOriginal;
+  if (campo !== 'email') nuevo = nuevo.toUpperCase();
+  if (campo === 'celular') nuevo = normalizarColombia(nuevo);
 
-          const actual = (registroActual?.[campo] || '').toString().trim();
-          if (actual && nuevo.toUpperCase() === actual.toUpperCase()) {
-            await enviar(sock, from, `⚠️ El campo *${campo}* fue actualizado correctamente.`);
-            continue;
-          }
+  const actual = (registroActual?.[campo] || '').toString().trim();
+  if (actual && nuevo.toUpperCase() === actual.toUpperCase()) {
+    await enviar(sock, from, `⚠️ El campo *${campo}* ya tiene el mismo valor registrado.`);
+    continue;
+  }
 
-          // Campos sensibles requieren confirmación + duplicados
-          const sensibles = ['email', 'documento', 'celular'];
-          if (sensibles.includes(campo)) {
-            let dup = null;
-            try {
-              let q = supabase.from(TABLE).select('id').neq('id', ses.user_id).limit(1);
-              if (campo === 'email') q = q.eq('email', valorOriginal.toLowerCase());
-              if (campo === 'documento') q = q.eq('documento', valorOriginal.replace(/\D/g, ''));
-              if (campo === 'celular') q = q.eq('celular', normalizarColombia(valorOriginal));
-              const rdup = await safeQuery(() => q.maybeSingle(), 'act.duplicado');
-              dup = rdup?.data || null;
-            } catch (e) {
-              console.error('⚠️ Error al validar duplicados:', e?.message || e);
-              await enviar(sock, from, '⚠️ Error al validar duplicados. Intenta más tarde.');
-              continue;
-            }
-            if (dup) { await enviar(sock, from, `🚫 No se puede actualizar. El *${campo}* ingresado ya está registrado en otro usuario.`); continue; }
+  const sensibles = ['email', 'documento', 'celular'];
+  if (sensibles.includes(campo)) {
+    let q = supabase.from(TABLE).select('id').neq('id', ses.user_id).limit(1);
+    if (campo === 'email') q = q.eq('email', valorOriginal.toLowerCase());
+    if (campo === 'documento') q = q.eq('documento', valorOriginal.replace(/\D/g, ''));
+    if (campo === 'celular') q = q.eq('celular', normalizarColombia(valorOriginal));
 
-            escribirJSON(PENDIENTE_FILE, { estado: 'confirmar_sensible', campo, nuevo, user_id: ses.user_id, who: numero });
-            await enviar(sock, from, `⚠️ El campo *${campo}* es sensible. ¿Confirmas actualizarlo a *${valorOriginal}*?\nResponde: *sí* o *no*`);
-            continue;
-          }
+    try {
+      const { data: dup, error } = await q.maybeSingle();
+      if (error) throw error;
+      if (dup) {
+        await enviar(sock, from, `🚫 No se puede actualizar. El *${campo}* ingresado ya existe en otro usuario.`);
+        continue;
+      }
 
-          // Guardar cambios directos en no sensibles
-          try {
-            const { error: updErr } = await safeQuery(() => supabase.from(TABLE).update({ [campo]: nuevo }).eq('id', ses.user_id), 'act.actualizar_no_sensible');
-            if (updErr) throw updErr;
-            await enviar(sock, from, `✅ El campo *${campo}* fue actualizado correctamente.`);
-          } catch (e) {
-            console.error('❌ Error al actualizar:', e?.message || e);
-            await enviar(sock, from, '❌ No se pudo actualizar. Intenta nuevamente.');
-          }
-          continue;
-        }
+      escribirJSON(PENDIENTE_FILE, {
+        estado: 'confirmar_sensible',
+        campo,
+        nuevo,
+        user_id: ses.user_id,
+        who: numero
+      });
+
+      await enviar(sock, from, `⚠️ El campo *${campo}* es sensible. ¿Confirmas actualizarlo a *${valorOriginal}*?\nResponde: *sí* o *no*`);
+      continue;
+    } catch (e) {
+      console.error('⚠️ Error al validar duplicados:', e.message || e);
+      await enviar(sock, from, '⚠️ Error al validar duplicados. Intenta más tarde.');
+      continue;
+    }
+  }
+
+  // Actualización directa para no sensibles
+  try {
+    const { error: updErr } = await supabase.from(TABLE).update({ [campo]: nuevo }).eq('id', ses.user_id);
+    if (updErr) throw updErr;
+    await enviar(sock, from, `✅ El campo *${campo}* fue actualizado correctamente.`);
+  } catch (e) {
+    console.error('❌ Error al actualizar:', e.message || e);
+    await enviar(sock, from, '❌ No se pudo actualizar. Intenta nuevamente.');
+  }
+
+  continue;
+}
 
         // ====== Confirmación de sensibles ======
         const pend2 = leerJSON(PENDIENTE_FILE);
         if (pend2?.estado === 'confirmar_sensible' && pend2?.who === numero && !lower.startsWith('/')) {
           const affirm = ['si', 'sí', 'yes', 'y']; const deny = ['no', 'n'];
           if (affirm.includes(lower)) {
-            try {
-              const { error } = await safeQuery(() => supabase.from(TABLE).update({ [pend2.campo]: pend2.nuevo }).eq('id', pend2.user_id), 'act.confirmar');
-              if (error) {
-                if (error.code === '23505' || (error.message && error.message.toLowerCase().includes('duplicate key'))) {
-                  await enviar(sock, from, '🚫 Ese dato ya está registrado en otra cuenta.');
-                } else {
-                  await enviar(sock, from, '⚠️ Error temporal al guardar. Intenta más tarde.');
-                }
-              } else { await enviar(sock, from, '✅ Actualizado correctamente.'); }
-            } catch (_) {
-              await enviar(sock, from, '⚠️ Ocurrió un problema guardando el dato. Intenta más tarde.');
-            }
+            const { error } = await supabase.from(TABLE).update({ [pend2.campo]: pend2.nuevo }).eq('id', pend2.user_id);
+            if (error) await enviar(sock, from, '❌ No pude actualizar el dato sensible. Intenta luego.');
+            else await enviar(sock, from, '✅ Actualizado correctamente.');
             borrar(PENDIENTE_FILE); continue;
           } else if (deny.includes(lower)) {
             await enviar(sock, from, '❎ Cambio cancelado.'); borrar(PENDIENTE_FILE); continue;
@@ -584,6 +581,7 @@ sock.ev.on('creds.update', async () => {
             await enviar(sock, from, 'Responde *sí* o *no* para confirmar el cambio sensible.'); continue;
           }
         }
+       
 
         // ====== /restaurar (simple) ======
         if (lower.startsWith('/restaurar')) {
