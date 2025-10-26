@@ -226,10 +226,14 @@ async function iniciarBot() {
   });
   
 // === Guardar sesión también en Supabase ===
+let isSaving = false;
+
 sock.ev.on('creds.update', async () => {
+  if (isSaving) return; // evita múltiples guardados simultáneos
   try {
+    isSaving = true;
     await saveCreds();
-    console.log("🟡 Intentando guardar sesión en Supabase...");
+    console.log("💾 Intentando guardar sesión en Supabase...");
 
     const fs = require("fs");
     const path = require("path");
@@ -238,7 +242,9 @@ sock.ev.on('creds.update', async () => {
     const dataToSave = {};
 
     for (const f of files) {
-      dataToSave[f] = fs.readFileSync(path.join(dir, f)).toString("base64");
+      const filePath = path.join(dir, f);
+      const content = fs.readFileSync(filePath, "utf8");
+      dataToSave[f] = content;
     }
 
     const { error } = await supabase
@@ -246,13 +252,15 @@ sock.ev.on('creds.update', async () => {
       .upsert({
         nombre: "mi_sesion",
         datos: dataToSave,
-        updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
 
     if (error) throw error;
-    console.log("💾 Sesión guardada correctamente en Supabase ✅");
+    console.log("✅ Sesión guardada correctamente en Supabase");
   } catch (err) {
-    console.error("⚠️ Error guardando sesión Supabase:", err.message || err);
+    console.error("⚠️ Error guardando sesión en Supabase:", err.message || err);
+  } finally {
+    isSaving = false;
   }
 });
 
