@@ -27,31 +27,39 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6Ik
 const TABLE        = process.env.TABLE || 'registros_miembros';
 const BOT_DISPLAY_NAME = process.env.BOT_DISPLAY_NAME || 'Mi Semilla';
 
-// === Cargar sesión previa desde Supabase ===
+// === Cargar sesión desde Supabase ===
 async function loadSessionFromSupabase() {
   try {
-    console.log("🟡 Verificando sesión previa en Supabase...");
+    console.log("📦 Restaurando sesión desde Supabase...");
+    const fs = require("fs");
+    const path = require("path");
+    const dir = "./auth_info_full";
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+
+    // ✅ Tomar siempre la sesión más reciente
     const { data, error } = await supabase
       .from("sesion_whatsapp")
-      .select("datos")
+      .select("*")
       .eq("nombre", "mi_sesion")
+      .order("updated_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error) throw error;
-    if (data && data.datos) {
-      const fs = require("fs");
-      const path = require("path");
-      const dir = "./auth_info_full";
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-      for (const [fname, content] of Object.entries(data.datos)) {
-        fs.writeFileSync(path.join(dir, fname), Buffer.from(content, "base64"));
-      }
-      console.log("✅ Sesión restaurada desde Supabase");
-    } else {
-      console.log("ℹ️ No hay sesión previa en Supabase");
+    if (!data || !data.datos) {
+      console.log("⚠️ No hay sesión guardada en Supabase.");
+      return;
     }
+
+    // ✅ Decodificar los archivos guardados en base64
+    for (const [f, content] of Object.entries(data.datos)) {
+      const filePath = path.join(dir, f);
+      fs.writeFileSync(filePath, Buffer.from(content, 'base64'));
+    }
+
+    console.log("✅ Sesión restaurada desde Supabase en ./auth_info_full");
   } catch (err) {
-    console.error("⚠️ Error cargando sesión Supabase:", err.message);
+    console.error("❌ Error al restaurar sesión desde Supabase:", err.message || err);
   }
 }
 
@@ -229,7 +237,7 @@ async function iniciarBot() {
 let isSaving = false;
 
 sock.ev.on('creds.update', async () => {
-  if (isSaving) return; // evita múltiples guardados simultáneos
+  if (isSaving) return; // evita guardados simultáneos
   try {
     isSaving = true;
     await saveCreds();
@@ -241,10 +249,11 @@ sock.ev.on('creds.update', async () => {
     const files = fs.readdirSync(dir);
     const dataToSave = {};
 
+    // ✅ Codificar todos los archivos en base64
     for (const f of files) {
       const filePath = path.join(dir, f);
-      const content = fs.readFileSync(filePath, "utf8");
-      dataToSave[f] = content;
+      const content = fs.readFileSync(filePath);
+      dataToSave[f] = content.toString('base64');
     }
 
     const { error } = await supabase
