@@ -27,8 +27,6 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6Ik
 const TABLE        = process.env.TABLE || 'registros_miembros';
 const BOT_DISPLAY_NAME = process.env.BOT_DISPLAY_NAME || 'Mi Semilla';
 
-const BOT_DISPLAY_NAME = process.env.BOT_DISPLAY_NAME || 'Mi Semilla';
-
 // === Cargar sesión previa desde Supabase ===
 async function loadSessionFromSupabase() {
   try {
