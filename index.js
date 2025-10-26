@@ -368,7 +368,7 @@ sock.ev.on('creds.update', async () => {
             (savedFP.includes(currentFP) || currentFP.includes(savedFP) || savedFP.split("-")[0] === currentFP.split("-")[0]);
 
           if (savedFP && !sameDevice) {
-            await enviar(sock, from, "🚫 Este dispositivo no está autorizado para consultar esta cuenta.\nSolo puedes usar */restaurar* para vincular tu cuenta a este nuevo dispositivo.");
+            await enviar(sock, from, "🚫 Este dato ya está registrado con otra cuenta.");
             borrar(PENDIENTE_FILE);
             continue;
           }
@@ -608,7 +608,7 @@ if (lower.startsWith('/actualizacion')) {
           const nuevoCel = normalizarColombia(texto);
           if (!/^\d{11,12}$/.test(nuevoCel)) { await enviar(sock, from, '❌ Número inválido.'); continue; }
           const { error: errU } = await supabase.from(TABLE).update({ celular: nuevoCel }).eq('id', rest.id);
-          if (errU) await enviar(sock, from, '❌ Error al guardar. Intenta luego.');
+          if (errU) await enviar(sock, from, '❌ No puedes restaurar tu cuenta si no son tus datos.');
           else      await enviar(sock, from, '✅ Tu número fue actualizado. Ya puedes usar */misdatos* y */actualizacion*.');
           borrar(RESTAURAR_FILE); continue;
         }
