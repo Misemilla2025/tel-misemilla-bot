@@ -779,32 +779,40 @@ if (rest?.estado === 'confirmar' && rest?.who === numero && !lower.startsWith('/
 // === Arranque inicial del bot ===
 iniciarBot().catch(e => console.error('❌ Error al iniciar el bot:', e));
 
-// === Auto-reinicio cada 10 minutos ===
+// === Reintento programado cada 15 minutos (evita dormir conexión) ===
 setInterval(() => {
-  iniciarBot().catch(err =>
-    console.error('⏳ Reinicio automático tras inactividad o error:', err)
-  );
-}, 1000 * 60 * 10); // cada 10 min
+  iniciarBot().catch(err => console.error('⏳ Reinicio automático forzado:', err));
+}, 1000 * 60 * 15);
 
-// === Auto-ping a Render cada 3 minutos ===
+// === Auto-ping cada 4 minutos para mantener Render activo ===
 setInterval(() => {
-  fetch('https://bot-whatsapp-misemilla.onrender.com')
-    .then(() => console.log('💓 Ping enviado para mantener activo'))
-    .catch(() => console.warn('⚠️ Falló el ping de mantenimiento'));
-}, 1000 * 60 * 3); // cada 3 min
+  fetch('https://bot-whatsapp-misemilla.onrender.com/health')
+    .then(res => res.text())
+    .then(msg => console.log('💗 Ping exitoso →', msg))
+    .catch(err => console.warn('⚠️ Falló el ping keep-alive:', err.message));
+}, 1000 * 60 * 4);
 
-// === Monitor de conexión de Baileys (heart-beat) ===
+// === Servidor Express para mantener el contenedor vivo ===
+import express from 'express';
+const app = express();
+app.get('/', (req, res) => res.send('Bot Mi Semilla activo 🌱'));
+app.get('/health', (req, res) => res.send('OK'));
+app.listen(process.env.PORT || 10000, () => {
+  console.log(`🌐 Servidor web activo en puerto ${process.env.PORT || 10000}`);
+});
+
+// === Monitor de conexión de Baileys (reconecta si se cae el socket) ===
 setInterval(() => {
   try {
     if (!global.sock || !global.sock.ws || global.sock.ws.readyState !== 1) {
-      console.log('🔁 Reconectando: socket inactivo o caído...');
-      iniciarBot().catch(err => console.error('❌ Fallo en reconexión:', err));
+      console.log('🔄 Socket inactivo, reconectando...');
+      iniciarBot().catch(err => console.error('❗ Error en reconexión:', err));
     }
   } catch (e) {
-    console.error('⚠️ Error en monitor de conexión:', e);
-    iniciarBot().catch(err => console.error('❌ Reintento fallido:', err));
+    console.error('⚠️ Error en monitor:', e);
+    iniciarBot().catch(err => console.error('⚠️ Reintento tras fallo:', err));
   }
-}, 1000 * 60 * 1); // cada 1 min
+}, 1000 * 60 * 1);
 
 
 
