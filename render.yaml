@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: mi-semilla-bot
+    env: node
+    plan: free
+    buildCommand: "npm install"
+    startCommand: "npm start"
+    envVars:
+      - key: SUPABASE_URL
+        value: https://hybozykbfehfjldhaxpp.supabase.co
+      - key: SUPABASE_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5Ym...
+      - key: BOT_DISPLAY_NAME
+        value: "Mi Semilla Bot"
