@@ -1,14 +1,15 @@
 services:
   - type: web
-    name: mi-semilla-bot
+    name: bot-whatsapp-misemilla
     env: node
     plan: free
-    buildCommand: "npm install"
-    startCommand: "npm start"
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
     envVars:
       - key: SUPABASE_URL
         value: https://hybozykbfehfjldhaxpp.supabase.co
       - key: SUPABASE_KEY
-        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5Ym...
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
       - key: BOT_DISPLAY_NAME
-        value: "Mi Semilla Bot"
+        value: Mi Semilla Bot

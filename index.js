@@ -673,55 +673,54 @@ setInterval(() => {
 }, 1000 * 60 * 15);
 
 // === Servidor Express + Ruta /health para Render/UptimeRobot ===
-const express = require('express');
-const fetch = require('node-fetch');
+import express from "express";
+import fetch from "node-fetch";
+import fs from "fs";
+import path from "path";
+import QRCode from "qrcode";
+
 const app = express();
+const sessionPath = "./auth_info_full";
 
-// Ruta principal (para verificar que el bot esté activo)
-app.get('/', (req, res) => {
-  res.send('🤖 Bot Mi Semilla activo y operativo 🌱');
+// Ruta raíz: muestra estado general
+app.get("/", (req, res) => {
+  res.send("🤖 Bot Mi Semilla activo y operativo 🌱");
 });
 
-// Endpoint de salud (Render o UptimeRobot harán ping aquí)
-app.get('/health', (req, res) => {
-  console.log('👀 Ping recibido desde Render o UptimeRobot');
-  res.status(200).send('OK');
+// Ruta /health: usada por Render y UptimeRobot
+app.get("/health", (req, res) => {
+  console.log("👀 Ping recibido desde Render o UptimeRobot");
+  res.status(200).send("OK");
 });
 
-// Puerto del servidor
+// Ruta opcional /qr
+app.get("/qr", async (req, res) => {
+  try {
+    const qrFile = path.join(sessionPath, "creds.json");
+    if (!fs.existsSync(qrFile)) {
+      return res.send("⚠️ No hay QR activo todavía.");
+    }
+    const qrData = fs.readFileSync(qrFile, "utf8");
+    const dataUrl = await QRCode.toDataURL(qrData);
+    res.send(`<h2>Escanea este código con WhatsApp</h2><img src="${dataUrl}" />`);
+  } catch (err) {
+    res.send("❌ Error generando QR: " + err.message);
+  }
+});
+
+// Escuchar en el puerto asignado por Render
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🌐 Servidor web activo en puerto ${PORT}`);
 });
 
-// === Auto-ping interno cada 4 minutos (mantener Render despierto) ===
+// === Auto-ping cada 4 minutos para mantener Render despierto ===
 setInterval(() => {
-  fetch('https://bot-whatsapp-misemilla.onrender.com/health')
+  fetch("https://bot-whatsapp-misemilla.onrender.com/health")
     .then(r => r.text())
-    .then(t => console.log('💗 Ping exitoso →', t))
-    .catch(e => console.warn('⚠️ Falló el ping keep-alive:', e.message));
+    .then(t => console.log("💗 Ping exitoso →", t))
+    .catch(e => console.warn("⚠️ Falló el ping keep-alive:", e.message));
 }, 1000 * 60 * 4);
-
-// === Guardado de sesión en Supabase (ajuste estable y sin duplicados) ===
-async function guardarSesionSupabase(payload) {
-  try {
-    const { error } = await supabase
-      .from('sesion_whatsapp')
-      .upsert(
-        {
-          nombre: 'mi_sesion',
-          datos: payload,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'nombre' }
-      );
-
-    if (error) console.error('⚠️ Error guardando sesión en Supabase:', error.message);
-    else console.log('✅ Sesión guardada o actualizada correctamente en Supabase.');
-  } catch (e) {
-    console.error('❌ Excepción en guardarSesionSupabase:', e.message);
-  }
-}
 
 
 

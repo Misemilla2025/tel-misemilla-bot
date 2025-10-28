@@ -1,22 +1,19 @@
 {
-  "name": "mi-semilla-bot",
+  "name": "bot-whatsapp-misemilla",
   "version": "1.0.0",
-  "description": "Bot WhatsApp con conexión Supabase y Express",
-  "main": "index.js",
+  "description": "Bot WhatsApp Mi Semilla",
   "type": "module",
+  "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.2",
-    "@whiskeysockets/baileys": "^6.7.9",
-    "dotenv": "^16.4.5",
+    "@whiskeysockets/baileys": "^6.7.5",
+    "@supabase/supabase-js": "^2.43.4",
+    "dotenv": "^16.3.1",
     "express": "^4.19.2",
-    "path": "^0.12.7",
-    "qrcode": "^1.5.4",
+    "node-fetch": "^3.3.2",
+    "qrcode": "^1.5.3",
     "qrcode-terminal": "^0.12.0"
-  },
-  "engines": {
-    "node": ">=22.x"
   }
 }
