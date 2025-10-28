@@ -1,1 +1,2 @@
-web: node index.cjs
+install: npm install
+start: node index.js
