@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: bot-mi-semilla
+    env: node
+    plan: free
+    buildCommand: "npm install"
+    startCommand: "node index.js"
+    envVars:
+      - key: SUPABASE_URL
+        value: https://TU_URL.supabase.co
+      - key: SUPABASE_KEY
+        value: TU_API_KEY
+      - key: BOT_DISPLAY_NAME
+        value: "Bot Mi Semilla"
