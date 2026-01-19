@@ -1,0 +1,17 @@
+{
+  "name": "tel-misemilla-bot",
+  "version": "1.0.0",
+  "description": "Bot Mi Semilla con integración Telegram + Supabase (modo webhook + polling).",
+  "main": "index.cjs",
+  "scripts": {
+    "start": "node index.cjs"
+  },
+  "engines": {
+    "node": ">=18.x"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.44.4",
+    "express": "^4.18.2",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
