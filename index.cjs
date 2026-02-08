@@ -58,6 +58,8 @@ bot.onText(/^\/start\b/i, async (msg) => {
 bot.onText(/^\/ayuda\b/i, async (msg) => {
   await send(msg.chat.id,
 `📖 *Comandos disponibles*
+• /start
+• /info
 • /misdatos
 • /actualizacion
 • /glosario
