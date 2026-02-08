@@ -377,3 +377,4 @@ bot.on("message", async (msg)=>{
   if (["adiós","chao","nos vemos","hasta luego"].some(w=>text.includes(w))){ await send(chatId,"👋 ¡Hasta pronto! Que tengas un excelente día 🌿"); return; }
 
   await send(chatId, "🤔 No entendí tu mensaje. Por favor escribe una opción válida.");
+});
