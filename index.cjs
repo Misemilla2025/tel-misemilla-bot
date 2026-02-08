@@ -54,6 +54,14 @@ bot.onText(/^\/start\b/i, async (msg) => {
   );
 });
 
+// /info
+bot.onText(/^\/info\b/i, async (msg) => {
+  await send(msg.chat.id,
+"ℹ️ *Mi Semilla* es un programa de apoyo comunitario y humanitario.\n" +
+"📌 A través de este bot puedes consultar, actualizar y validar tu registro.\n" +
+"🌍 Nuestro objetivo es mantener tu información al día y fortalecer la red de ayuda.");
+});
+
 // /ayuda
 bot.onText(/^\/ayuda\b/i, async (msg) => {
   await send(msg.chat.id,
@@ -74,12 +82,12 @@ bot.onText(/\/glosario/i, async (msg) => {
 
 ╔💠 *DATOS PERSONALES*
 • email
-• primer_nombre
-• segundo_nombre
+• primer\\_nombre
+• segundo\\_nombre
 • apellidos
-• tipo_documento
+• tipo\\_documento
 • documento
-• fecha_nacimiento
+• fecha\\_nacimiento
 • edad
 • genero
 • escolaridad
@@ -87,8 +95,8 @@ bot.onText(/\/glosario/i, async (msg) => {
 ╠📞 *CONTACTO*
 • indicativo
 • celular
-• usuario_telegram
-• codigo_postal
+• usuario\\_telegram
+• codigo\\_postal
 
 ╠📍 *UBICACIÓN*
 • pais
@@ -98,33 +106,33 @@ bot.onText(/\/glosario/i, async (msg) => {
 • direccion
 
 ╠🏠 *HOGAR*
-• vivienda_propia
+• vivienda\\_propia
 • zona
 • estrato
-• personas_en_hogar
-• personas_trabajan
-• adultos_mayores
+• personas\\_en\\_hogar
+• personas\\_trabajan
+• adultos\\_mayores
 • menores
 
 ╠🧩 *SERVICIOS*
 • servicios
 • discapacidad
-• detalle_discapacidad
+• detalle\\_discapacidad
 
 ╠🧠 *INTERESES*
 • hobbies
 • emprendimiento
 
 ╠🤝 *REFERENCIAS*
-• ref_nombre
-• ref_telegram
-• ref_whatsapp
+• ref\\_nombre
+• ref\\_telegram
+• ref\\_whatsapp
 
 ╚🚫 *No duplicables*
 • email
 • documento
 • celular
-• usuario_telegram
+• usuario\\_telegram
 `;
   await bot.sendMessage(msg.chat.id, texto, { parse_mode: "Markdown" });
 });
