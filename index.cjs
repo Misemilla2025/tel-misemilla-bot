@@ -51,7 +51,6 @@ console.log("🧹 Limpiando archivos de estado…");
 console.log("✅ Estado limpio.");
 
 // =============== [1] Inicialización universal del cliente ===============
-const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Monitoreo genérico de errores del bot
 bot.on("error", (err) => console.error("⚠️ Bot error:", err));
@@ -244,10 +243,9 @@ bot.onText(/\/glosario/i, async (msg) => {
   await bot.sendMessage(msg.chat.id, texto, { parse_mode: "Markdown" });
 });
 
-// ======================= /MISDATOS — versión definitiva (telegram_id) =======================
 bot.onText(/^\/misdatos\b/i, async (msg) => {
   const chatId = msg.chat.id;
-  const telegramId = Number(msg.from.id); // 🔐 LLAVE REAL (NUMÉRICA)
+  const telegramId = msg.from.id; // ⬅️ SIN toString()
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
@@ -264,28 +262,17 @@ bot.onText(/^\/misdatos\b/i, async (msg) => {
       await bot.sendMessage(
         chatId,
         "⚠️ *No se encontró ningún registro vinculado a este Telegram.*\n\n" +
-        "Esto puede pasar si:\n" +
-        "• Cambiaste de cuenta de Telegram\n" +
-        "• Restauraste tu celular\n" +
-        "• Tu registro fue creado antes de esta validación\n\n" +
-        "♻️ Para vincular tu cuenta correctamente usa:\n" +
-        "`/restaurar`\n\n" +
-        "🔐 *Nota:* El acceso siempre se valida por el *Telegram ID*, no por el nombre de usuario.",
+        "♻️ Usa /restaurar si cambiaste de cuenta.",
         { parse_mode: "Markdown" }
       );
-      console.log(`❌ No se encontró registro para telegram_id ${telegramId}`);
       return;
     }
 
     await enviarFichaDatos(chatId, data);
-    console.log(`✅ Registro devuelto correctamente para telegram_id ${telegramId}`);
 
   } catch (err) {
     console.error("❌ Error en /misdatos:", err);
-    await bot.sendMessage(
-      chatId,
-      "⚠️ Ocurrió un error al consultar tus datos. Intenta nuevamente más tarde."
-    );
+    await bot.sendMessage(chatId, "⚠️ Error al consultar tus datos.");
   }
 });
 
