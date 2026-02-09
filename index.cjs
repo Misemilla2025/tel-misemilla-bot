@@ -245,7 +245,7 @@ bot.onText(/\/glosario/i, async (msg) => {
 
 bot.onText(/^\/misdatos\b/i, async (msg) => {
   const chatId = msg.chat.id;
-  const telegramId = msg.from.id; // ⬅️ SIN toString()
+  const telegramId = msg.from.id.toString();
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
@@ -647,16 +647,16 @@ Ahora, *¿qué deseas vincular?*
     }
 
  if (low === "sí" || low === "si" || low === "s") {
-  const telegramId = msg.from.id;
+  const telegramId = msg.from.id.toString();
   const username  = msg.from.username ? `@${msg.from.username}` : null;
 
   const payload = {
-    telegram_id: telegramId,              // 🔑 CLAVE
-    [st.vinculo]: st.nuevo,
-    usuario_telegram: username ?? st.nuevo,
-    ultima_actualizacion: new Date().toISOString(),
-    origen: "restaurar_tg"
-  };
+  telegram_id: telegramId,   // STRING
+  [st.vinculo]: st.nuevo,
+  usuario_telegram: username ?? st.nuevo,
+  ultima_actualizacion: new Date().toISOString(),
+  origen: "restaurar_tg"
+};
 
   const { error } = await supabase
     .from(TABLE)
