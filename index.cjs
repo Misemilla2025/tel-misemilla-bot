@@ -182,70 +182,66 @@ bot.onText(/^\/ayuda\b/i, async (msg) => {
 "♻️ /restaurar – Vincula tu cuenta si perdiste acceso");
 });
 
-// ===============================================================
-// [GLOSARIO] Campos disponibles para actualización y consulta
-// ===============================================================
+// ================== GLOSARIO ==================
 bot.onText(/\/glosario/i, async (msg) => {
-  const chatId = msg.chat.id;
-
   const texto = `
-📘 *Glosario de actualización de datos*
+📘 *Glosario de actualización*
 
-╔💠 *DATOS PERSONALES:*
-• email  
-• nombre\\_completo  
-• documento  
-• fecha\\_nacimiento  
-• edad  
-• genero  
-• escolaridad  
+╔💠 *DATOS PERSONALES*
+• email
+• primer\\_nombre
+• segundo\\_nombre
+• apellidos
+• tipo\\_documento
+• documento
+• fecha\\_nacimiento
+• edad
+• genero
+• escolaridad
 
-╠📞 *CONTACTO:*
-• celular  
-• usuario\\_telegram  
+╠📞 *CONTACTO*
+• indicativo
+• celular
+• usuario\\_telegram
+• codigo\\_postal
 
-╠📍 *UBICACIÓN:*
-• pais  
-• departamento  
-• ciudad  
-• barrio  
-• direccion  
+╠📍 *UBICACIÓN*
+• pais
+• departamento
+• ciudad
+• barrio
+• direccion
 
-╠🏠 *HOGAR:*
-• vivienda\\_propia  
-• zona  
-• estrato  
-• personas\\_en\\_hogar  
-• personas\\_trabajan  
-• adultos\\_mayores  
-• menores  
+╠🏠 *HOGAR*
+• vivienda\\_propia
+• zona
+• estrato
+• personas\\_en\\_hogar
+• personas\\_trabajan
+• adultos\\_mayores
+• menores
 
-╠🧩 *SERVICIOS:*
-• servicios  
-• discapacidad  
-• detalle\\_discapacidad  
+╠🧩 *SERVICIOS*
+• servicios
+• discapacidad
+• detalle\\_discapacidad
 
-╠🧠 *INTERESES:*
-• hobbies  
-• emprendimiento  
+╠🧠 *INTERESES*
+• hobbies
+• emprendimiento
 
-╠🤝 *REFERENCIAS:*
-• ref\\_nombre  
-• ref\\_telegram  
-• ref\\_whatsapp  
+╠🤝 *REFERENCIAS*
+• ref\\_nombre
+• ref\\_telegram
+• ref\\_whatsapp
 
-╚🚫 *No se pueden duplicar:*
-• email  
-• documento  
-• celular  
-• usuario\\_telegram  
-
-📝 *Ejemplo de uso:*  
-\`/actualizacion ciudad Bogotá\`  
-\`/actualizacion nombre_completo Juan Pérez\`
+╚🚫 *No duplicables*
+• email
+• documento
+• celular
+• usuario\\_telegram
 `;
-
-  await bot.sendMessage(chatId, texto, { parse_mode: "MarkdownV2" });
+  await bot.sendMessage(msg.chat.id, texto, { parse_mode: "Markdown" });
 });
 
 // ======================= /MISDATOS — versión definitiva (telegram_id) =======================
