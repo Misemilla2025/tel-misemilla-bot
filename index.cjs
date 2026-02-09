@@ -646,17 +646,22 @@ Ahora, *¿qué deseas vincular?*
       return;
     }
 
-    if (low === "sí" || low === "si" || low === "s") {
-      const payload = {
-        [st.vinculo]: st.nuevo,
-        ultima_actualizacion: new Date().toISOString(),
-        origen: "restaurar_tg"
-      };
+ if (low === "sí" || low === "si" || low === "s") {
+  const telegramId = msg.from.id;
+  const username  = msg.from.username ? `@${msg.from.username}` : null;
 
-      const { error } = await supabase
-        .from(TABLE)
-        .update(payload)
-        .eq("id", st.id);
+  const payload = {
+    telegram_id: telegramId,              // 🔑 CLAVE
+    [st.vinculo]: st.nuevo,
+    usuario_telegram: username ?? st.nuevo,
+    ultima_actualizacion: new Date().toISOString(),
+    origen: "restaurar_tg"
+  };
+
+  const { error } = await supabase
+    .from(TABLE)
+    .update(payload)
+    .eq("id", st.id);
 
       if (error) {
         console.error(error);
