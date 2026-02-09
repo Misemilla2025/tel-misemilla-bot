@@ -246,14 +246,12 @@ bot.onText(/\/glosario/i, async (msg) => {
 
 // ======================= /MISDATOS — versión definitiva (telegram_id) =======================
 bot.onText(/^\/misdatos\b/i, async (msg) => {
-  const chatId = msg.chat.id.toString();
-  const telegramId = msg.from.id.toString(); // 🔐 LLAVE REAL
-  const username = msg.from.username ? '@' + msg.from.username.toLowerCase() : null;
+  const chatId = msg.chat.id;
+  const telegramId = Number(msg.from.id); // 🔐 LLAVE REAL (NUMÉRICA)
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
   try {
-    // 🔸 Buscar registro por telegram_id
     const { data, error } = await supabase
       .from("registros_miembros")
       .select("*")
@@ -262,7 +260,6 @@ bot.onText(/^\/misdatos\b/i, async (msg) => {
 
     if (error) throw error;
 
-    // 🔸 Caso 1: No existe registro con este Telegram ID
     if (!data) {
       await bot.sendMessage(
         chatId,
@@ -280,7 +277,6 @@ bot.onText(/^\/misdatos\b/i, async (msg) => {
       return;
     }
 
-    // 🔸 Caso 2: Registro encontrado → mostrar ficha
     await enviarFichaDatos(chatId, data);
     console.log(`✅ Registro devuelto correctamente para telegram_id ${telegramId}`);
 
