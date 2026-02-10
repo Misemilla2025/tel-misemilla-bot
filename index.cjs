@@ -440,22 +440,25 @@ const telegramId = String(from.id);
     }
 
     // ⚠️ Confirmación para campos sensibles
-    if (camposProtegidos.includes(campo)) {
-      await bot.sendMessage(
-        chatId,
-        `⚠️ *Alerta:* El campo *${campo}* es un dato sensible.\n` +
-        "Este cambio puede afectar tu acceso.\n\n" +
-        "¿Deseas continuar? Responde *sí* o *no*.",
-        { parse_mode: "Markdown" }
-      );
+if (camposProtegidos.includes(campo)) {
+  await bot.sendMessage(
+    chatId,
+    `⚠️ *Alerta:* El campo *${campo}* es un dato sensible.\n` +
+    "Este cambio puede afectar tu acceso.\n\n" +
+    "¿Deseas continuar? Responde *sí* o *no*.",
+    { parse_mode: "Markdown" }
+  );
 
-      CONFIRMACIONES.set(telegramId, {
-  chatId,
-  id,
-  campo,
-  valor,
-  campoMinuscula: camposMinuscula.includes(campo)
-});
+  CONFIRMACIONES.set(telegramId, {
+    chatId,
+    id,
+    campo,
+    valor,
+    campoMinuscula: camposMinuscula.includes(campo)
+  });
+
+  return; // 🔥 ESTO ES CLAVE
+}
 
     // 🧩 Actualización directa
     const valorFinal = camposMinuscula.includes(campo)
