@@ -25,6 +25,8 @@ const URL = process.env.RAIL_URL;
 bot = new TelegramBot(TELEGRAM_TOKEN, { webHook: true });
 bot.setWebHook(`${URL}/webhook`);
 
+const CONFIRMACIONES = new Map();
+
 app.post("/webhook", (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
@@ -447,15 +449,13 @@ const telegramId = String(from.id);
         { parse_mode: "Markdown" }
       );
 
-      global.confirmacionPendiente = {
-        chatId,
-        id,
-        campo,
-        valor,
-        campoMinuscula: camposMinuscula.includes(campo)
-      };
-      return;
-    }
+      CONFIRMACIONES.set(telegramId, {
+  chatId,
+  id,
+  campo,
+  valor,
+  campoMinuscula: camposMinuscula.includes(campo)
+});
 
     // 🧩 Actualización directa
     const valorFinal = camposMinuscula.includes(campo)
@@ -481,6 +481,53 @@ const telegramId = String(from.id);
       chatId,
       "❌ Error al procesar tu actualización. Intenta más tarde."
     );
+  }
+});
+
+bot.on("message", async (msg) => {
+  const texto = msg.text?.trim().toLowerCase();
+  if (!texto) return;
+
+  const from = msg.from;
+  if (!from?.id) return;
+
+  const telegramId = String(from.id);
+  if (!CONFIRMACIONES.has(telegramId)) return;
+
+  const pend = CONFIRMACIONES.get(telegramId);
+  const chatId = msg.chat.id;
+
+  if (texto === "no") {
+    CONFIRMACIONES.delete(telegramId);
+    await bot.sendMessage(chatId, "❌ Actualización cancelada.");
+    return;
+  }
+
+  if (texto === "si" || texto === "sí") {
+    try {
+      const valorFinal = pend.campoMinuscula
+        ? pend.valor
+        : pend.valor.toUpperCase();
+
+      const { error } = await supabase
+        .from(TABLE)
+        .update({ [pend.campo]: valorFinal })
+        .eq("id", pend.id);
+
+      if (error) throw error;
+
+      await bot.sendMessage(
+        chatId,
+        `✅ *${pend.campo}* actualizado correctamente.`,
+        { parse_mode: "Markdown" }
+      );
+
+    } catch (err) {
+      console.error("❌ Error confirmación:", err);
+      await bot.sendMessage(chatId, "❌ Error al confirmar la actualización.");
+    }
+
+    CONFIRMACIONES.delete(telegramId);
   }
 });
 
