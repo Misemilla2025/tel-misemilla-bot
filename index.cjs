@@ -245,7 +245,13 @@ bot.onText(/\/glosario/i, async (msg) => {
 
 bot.onText(/^\/misdatos\b/i, async (msg) => {
   const chatId = msg.chat.id;
-  const telegramId = msg.from.id.toString();
+  const from = msg.from;
+if (!from || !from.id) {
+  await send(msg.chat.id, "⚠️ No pude identificar tu cuenta de Telegram. Escríbele directamente al bot.");
+  return;
+}
+
+const telegramId = String(from.id);
 
   await bot.sendMessage(chatId, "🔍 Consultando tus datos, por favor espera...");
 
@@ -355,7 +361,13 @@ bot.onText(/^\/actualizacion(.*)/, async (msg, match) => {
   const valor = partes.join(" ").trim();
 
   // 🔐 LLAVE REAL
-  const telegramId = msg.from.id.toString();
+  const from = msg.from;
+if (!from || !from.id) {
+  await send(msg.chat.id, "⚠️ No pude identificar tu cuenta de Telegram. Escríbele directamente al bot.");
+  return;
+}
+
+const telegramId = String(from.id);
 
   try {
     // 🔎 Buscar SOLO por telegram_id
@@ -647,7 +659,13 @@ Ahora, *¿qué deseas vincular?*
     }
 
  if (low === "sí" || low === "si" || low === "s") {
-  const telegramId = msg.from.id.toString();
+  const from = msg.from;
+if (!from || !from.id) {
+  await send(msg.chat.id, "⚠️ No pude identificar tu cuenta de Telegram. Escríbele directamente al bot.");
+  return;
+}
+
+const telegramId = String(from.id);
   const username  = msg.from.username ? `@${msg.from.username}` : null;
 
   const payload = {
