@@ -524,10 +524,13 @@ bot.on("message", async (msg) => {
 
     } catch (err) {
       console.error("❌ Error confirmación:", err);
-      await bot.sendMessage(chatId, "❌ Error al confirmar la actualización.");
+      await bot.sendMessage(
+        chatId,
+        "❌ Error al confirmar la actualización."
+      );
+    } finally {
+      CONFIRMACIONES.delete(telegramId);
     }
-
-    CONFIRMACIONES.delete(telegramId);
   }
 });
 
