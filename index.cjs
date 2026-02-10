@@ -669,9 +669,8 @@ const telegramId = String(from.id);
   const username  = msg.from.username ? `@${msg.from.username}` : null;
 
   const payload = {
-  telegram_id: telegramId,   // STRING
   [st.vinculo]: st.nuevo,
-  usuario_telegram: username ?? st.nuevo,
+  telegram_id: String(msg.from.id), // 🔥 ESTA ES LA CLAVE
   ultima_actualizacion: new Date().toISOString(),
   origen: "restaurar_tg"
 };
